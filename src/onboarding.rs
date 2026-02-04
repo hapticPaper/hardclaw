@@ -23,21 +23,25 @@ use ratatui::{
     Frame, Terminal,
 };
 
-use hardclaw::{
-    wallet::Wallet,
-    types::Block as HcBlock,
-};
+use hardclaw::{types::Block as HcBlock, wallet::Wallet};
 
 /// Application state
 enum AppState {
     Welcome,
     MainMenu,
     CreateWallet,
-    WalletCreated { address: String, path: String },
+    WalletCreated {
+        address: String,
+        path: String,
+    },
     LoadWallet,
-    WalletLoaded { address: String },
+    WalletLoaded {
+        address: String,
+    },
     MineGenesis,
-    GenesisMined { block_hash: String },
+    GenesisMined {
+        block_hash: String,
+    },
     #[allow(dead_code)] // Planned feature - node integration
     NodeRunning,
     Help,
@@ -76,9 +80,21 @@ struct App {
 impl App {
     fn new() -> Self {
         let menu_items = if Wallet::default_exists() {
-            vec!["Load Wallet", "Create New Wallet", "Mine Genesis Block", "Help", "Quit"]
+            vec![
+                "Load Wallet",
+                "Create New Wallet",
+                "Mine Genesis Block",
+                "Help",
+                "Quit",
+            ]
         } else {
-            vec!["Create Wallet", "Load Wallet", "Mine Genesis Block", "Help", "Quit"]
+            vec![
+                "Create Wallet",
+                "Load Wallet",
+                "Mine Genesis Block",
+                "Help",
+                "Quit",
+            ]
         };
 
         Self {
@@ -198,7 +214,11 @@ impl App {
                 self.state = AppState::WalletCreated { address, path };
                 // Update menu to show "Load Wallet" as first option now
                 self.menu = MenuState::new(vec![
-                    "Load Wallet", "Create New Wallet", "Mine Genesis Block", "Help", "Quit"
+                    "Load Wallet",
+                    "Create New Wallet",
+                    "Mine Genesis Block",
+                    "Help",
+                    "Quit",
                 ]);
             }
             Err(e) => {
@@ -240,9 +260,9 @@ impl App {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),  // Header
-                Constraint::Min(10),    // Content
-                Constraint::Length(3),  // Footer
+                Constraint::Length(3), // Header
+                Constraint::Min(10),   // Content
+                Constraint::Length(3), // Footer
             ])
             .split(size);
 
@@ -282,9 +302,17 @@ impl App {
         };
 
         let header = Paragraph::new(format!("HardClaw v{}{}", hardclaw::VERSION, wallet_status))
-            .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+            .style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
             .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::BOTTOM).border_style(Style::default().fg(Color::DarkGray)));
+            .block(
+                Block::default()
+                    .borders(Borders::BOTTOM)
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            );
 
         frame.render_widget(header, area);
     }
@@ -312,7 +340,11 @@ impl App {
         let footer = Paragraph::new(footer_text)
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(Color::DarkGray)));
+            .block(
+                Block::default()
+                    .borders(Borders::TOP)
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            );
 
         frame.render_widget(footer, area);
     }
@@ -343,7 +375,11 @@ impl App {
     fn render_main_menu(&self, frame: &mut Frame, area: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(30), Constraint::Percentage(40), Constraint::Percentage(30)])
+            .constraints([
+                Constraint::Percentage(30),
+                Constraint::Percentage(40),
+                Constraint::Percentage(30),
+            ])
             .split(area);
 
         let items: Vec<ListItem> = self
@@ -382,7 +418,9 @@ impl App {
             Line::from(""),
             Line::from(Span::styled(
                 "Create New Wallet",
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
             Line::from("This will generate a new Ed25519 keypair for your HardClaw wallet."),
@@ -406,9 +444,11 @@ impl App {
             )),
         ];
 
-        let paragraph = Paragraph::new(text)
-            .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)));
+        let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        );
 
         frame.render_widget(paragraph, centered_rect(60, 60, area));
     }
@@ -418,7 +458,9 @@ impl App {
             Line::from(""),
             Line::from(Span::styled(
                 "Wallet Created Successfully!",
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
             Line::from("Your new wallet address:"),
@@ -442,9 +484,11 @@ impl App {
             )),
         ];
 
-        let paragraph = Paragraph::new(text)
-            .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Green)));
+        let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Green)),
+        );
 
         frame.render_widget(paragraph, centered_rect(70, 60, area));
     }
@@ -458,7 +502,9 @@ impl App {
                 Line::from(""),
                 Line::from(Span::styled(
                     "Load Existing Wallet",
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
                 )),
                 Line::from(""),
                 Line::from("Found wallet at:"),
@@ -496,9 +542,11 @@ impl App {
             ]
         };
 
-        let paragraph = Paragraph::new(text)
-            .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)));
+        let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        );
 
         frame.render_widget(paragraph, centered_rect(60, 50, area));
     }
@@ -508,7 +556,9 @@ impl App {
             Line::from(""),
             Line::from(Span::styled(
                 "Wallet Loaded Successfully!",
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
             Line::from("Wallet address:"),
@@ -524,9 +574,11 @@ impl App {
             )),
         ];
 
-        let paragraph = Paragraph::new(text)
-            .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Green)));
+        let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Green)),
+        );
 
         frame.render_widget(paragraph, centered_rect(60, 40, area));
     }
@@ -542,7 +594,9 @@ impl App {
             Line::from(""),
             Line::from(Span::styled(
                 "Mine Genesis Block",
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
             Line::from("This will create the genesis block for your HardClaw network."),
@@ -554,9 +608,18 @@ impl App {
             )),
             Line::from(""),
             Line::from("Genesis parameters:"),
-            Line::from(Span::styled("  - Height: 0", Style::default().fg(Color::DarkGray))),
-            Line::from(Span::styled("  - Parent: 0x0000...0000", Style::default().fg(Color::DarkGray))),
-            Line::from(Span::styled("  - Consensus: Proof-of-Verification", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled(
+                "  - Height: 0",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(Span::styled(
+                "  - Parent: 0x0000...0000",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(Span::styled(
+                "  - Consensus: Proof-of-Verification",
+                Style::default().fg(Color::DarkGray),
+            )),
             Line::from(""),
             Line::from(""),
             Line::from(Span::styled(
@@ -565,9 +628,11 @@ impl App {
             )),
         ];
 
-        let paragraph = Paragraph::new(text)
-            .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)));
+        let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        );
 
         frame.render_widget(paragraph, centered_rect(65, 70, area));
     }
@@ -577,7 +642,9 @@ impl App {
             Line::from(""),
             Line::from(Span::styled(
                 "GENESIS BLOCK MINED!",
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
             Line::from(Span::styled(
@@ -592,14 +659,25 @@ impl App {
             )),
             Line::from(""),
             Line::from("Block Details:"),
-            Line::from(Span::styled("  Height:     0", Style::default().fg(Color::White))),
-            Line::from(Span::styled("  Timestamp:  Now", Style::default().fg(Color::White))),
-            Line::from(Span::styled("  Txns:       0", Style::default().fg(Color::White))),
+            Line::from(Span::styled(
+                "  Height:     0",
+                Style::default().fg(Color::White),
+            )),
+            Line::from(Span::styled(
+                "  Timestamp:  Now",
+                Style::default().fg(Color::White),
+            )),
+            Line::from(Span::styled(
+                "  Txns:       0",
+                Style::default().fg(Color::White),
+            )),
             Line::from(""),
             Line::from(""),
             Line::from(Span::styled(
                 "\"We do not trust; we verify.\"",
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::ITALIC),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::ITALIC),
             )),
             Line::from(""),
             Line::from(Span::styled(
@@ -608,9 +686,11 @@ impl App {
             )),
         ];
 
-        let paragraph = Paragraph::new(text)
-            .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Green)));
+        let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Green)),
+        );
 
         frame.render_widget(paragraph, centered_rect(70, 70, area));
     }
@@ -620,27 +700,52 @@ impl App {
             Line::from(""),
             Line::from(Span::styled(
                 "HardClaw - Quick Start Guide",
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
-            Line::from(Span::styled("1. Create a Wallet", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "1. Create a Wallet",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )),
             Line::from("   Generate a new Ed25519 keypair to identify your node."),
             Line::from("   Your wallet is your identity on the network."),
             Line::from(""),
-            Line::from(Span::styled("2. Mine Genesis Block", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "2. Mine Genesis Block",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )),
             Line::from("   Create the first block to initialize the network."),
             Line::from("   This makes you the first verifier."),
             Line::from(""),
-            Line::from(Span::styled("3. Run Your Node", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "3. Run Your Node",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )),
             Line::from("   Start verifying solutions and producing blocks."),
             Line::from("   Earn HCLAW rewards for honest verification."),
             Line::from(""),
-            Line::from(Span::styled("Protocol Roles:", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "Protocol Roles:",
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            )),
             Line::from("   Requester - Submit jobs with bounties"),
             Line::from("   Solver    - Execute work, submit solutions"),
             Line::from("   Verifier  - Verify solutions, mine blocks"),
             Line::from(""),
-            Line::from(Span::styled("Fee Distribution: ", Style::default().fg(Color::White))),
+            Line::from(Span::styled(
+                "Fee Distribution: ",
+                Style::default().fg(Color::White),
+            )),
             Line::from("   95% Solver | 4% Verifier | 1% Burned"),
             Line::from(""),
             Line::from(Span::styled(
@@ -667,7 +772,9 @@ impl App {
             Line::from(""),
             Line::from(Span::styled(
                 "Node Running",
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
             Line::from("Status: Active"),
@@ -680,9 +787,11 @@ impl App {
             )),
         ];
 
-        let paragraph = Paragraph::new(text)
-            .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Green)));
+        let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Green)),
+        );
 
         frame.render_widget(paragraph, centered_rect(50, 40, area));
     }
