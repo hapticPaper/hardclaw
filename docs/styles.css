@@ -249,6 +249,21 @@ body {
   line-height: 1.6;
 }
 
+.bullets {
+  margin-top: 14px;
+  padding-left: 20px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.bullets li {
+  margin-bottom: 10px;
+}
+
+.bullets strong {
+  color: var(--text);
+}
+
 pre {
   margin-top: 14px;
   padding: 16px 18px;

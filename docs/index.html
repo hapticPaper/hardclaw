@@ -28,6 +28,7 @@
           <a href="#overview">Overview</a>
           <a href="#quickstart">Quick start</a>
           <a href="#protocol">Protocol</a>
+          <a href="#intent">Intent</a>
           <a href="#build">Build</a>
           <a href="#binaries">Binaries</a>
         </nav>
@@ -180,6 +181,28 @@ hardclaw-node --bootstrap /ip4/&lt;IP&gt;/tcp/9000/p2p/&lt;PEER_ID&gt;</code></p
             <h3>Onboarding TUI</h3>
             <p>Local wallet creation/loading and genesis mining via <span class="code">hardclaw</span>.</p>
           </article>
+        </section>
+
+        <section id="intent" class="split" data-animate>
+          <div>
+            <h2>Intent + threat model</h2>
+            <p>
+              HardClaw is for protocols where the scarce resource is trust in outputs: verifiers should be rewarded for checking useful work (agent
+              runs, computations, or datasets), not for burning electricity on arbitrary puzzles.
+            </p>
+            <p class="note">
+              Today this repo is a prototype. It focuses on primitives (job packets, solution candidates, verifier attestations, and token accounting)
+              more than full product workflows.
+            </p>
+          </div>
+          <div class="card glassy">
+            <h3>Threats we design for</h3>
+            <ul class="bullets">
+              <li><strong>Lazy verification:</strong> honey pots can catch verifiers who approve without checking.</li>
+              <li><strong>Subjective tasks:</strong> Schelling point voting uses redundancy + commit/reveal to reduce coordination attacks.</li>
+              <li><strong>Spam &amp; Sybil:</strong> burn-to-request can make job submission costly enough to deter flooding.</li>
+            </ul>
+          </div>
         </section>
 
         <section class="split" data-animate>
