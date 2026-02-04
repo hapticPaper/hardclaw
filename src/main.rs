@@ -30,9 +30,10 @@ fn data_dir() -> PathBuf {
 /// Load or generate a persistent keypair using BIP39 mnemonic
 fn load_or_create_keypair() -> Keypair {
     let mnemonic_path = data_dir().join("seed_phrase.txt");
+    let legacy_key_path = data_dir().join("node_key");
 
+    // Try new format first (seed_phrase.txt)
     if mnemonic_path.exists() {
-        // Load existing mnemonic
         match fs::read_to_string(&mnemonic_path) {
             Ok(phrase) => {
                 let phrase = phrase.trim();
@@ -48,6 +49,31 @@ fn load_or_create_keypair() -> Keypair {
             }
             Err(e) => {
                 warn!("Failed to read seed phrase: {}", e);
+            }
+        }
+    }
+
+    // Try legacy format (node_key - 32 byte raw secret)
+    if legacy_key_path.exists() {
+        match fs::read(&legacy_key_path) {
+            Ok(bytes) if bytes.len() == 32 => {
+                let mut seed = [0u8; 32];
+                seed.copy_from_slice(&bytes);
+                match hardclaw::crypto::SecretKey::from_bytes(seed) {
+                    Ok(secret) => {
+                        info!("Loaded wallet from legacy key file at {:?}", legacy_key_path);
+                        return Keypair::from_secret(secret);
+                    }
+                    Err(e) => {
+                        warn!("Invalid legacy key file: {}", e);
+                    }
+                }
+            }
+            Ok(bytes) => {
+                warn!("Legacy key file has wrong size: {} bytes", bytes.len());
+            }
+            Err(e) => {
+                warn!("Failed to read legacy key: {}", e);
             }
         }
     }
