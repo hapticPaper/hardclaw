@@ -1,6 +1,6 @@
 [package]
 name = "hardclaw"
-version = "0.10.10"
+version = "0.10.11"
 edition = "2021"
 authors = ["HardClaw Collective"]
 description = "A Proof-of-Verification Protocol for the Autonomous Agent Economy"
