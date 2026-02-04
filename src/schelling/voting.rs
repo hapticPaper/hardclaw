@@ -115,14 +115,9 @@ impl VotingRound {
     /// Tally the votes
     #[must_use]
     pub fn tally_votes(&self) -> VotingResults {
-        let revealed_votes: Vec<&VerificationVote> = self.votes
+        let votes_owned: Vec<VerificationVote> = self.votes
             .values()
             .filter(|v| v.is_revealed())
-            .collect();
-
-        // Convert references to owned for VotingResults
-        let votes_owned: Vec<VerificationVote> = revealed_votes
-            .into_iter()
             .cloned()
             .collect();
 

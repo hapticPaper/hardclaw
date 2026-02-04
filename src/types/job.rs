@@ -1,4 +1,4 @@
-//! Job Packets - the unit of work in the HardClaw protocol.
+//! Job Packets - the unit of work in the `HardClaw` protocol.
 //!
 //! A Job Packet contains:
 //! - Input data for the task
@@ -37,7 +37,7 @@ pub enum JobStatus {
 }
 
 /// Specification for how to verify the solution
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VerificationSpec {
     /// Hash of expected output (for deterministic tasks)
     HashMatch {

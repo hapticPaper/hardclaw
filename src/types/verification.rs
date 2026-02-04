@@ -56,7 +56,7 @@ impl VerificationResult {
         data.extend_from_slice(self.solution_id.as_bytes());
         data.extend_from_slice(self.job_id.as_bytes());
         data.extend_from_slice(self.verifier.as_bytes());
-        data.push(if self.passed { 1 } else { 0 });
+        data.push(u8::from(self.passed));
         data.extend_from_slice(&self.verified_at.to_le_bytes());
         data
     }

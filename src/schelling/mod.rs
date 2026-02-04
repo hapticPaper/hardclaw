@@ -1,7 +1,7 @@
 //! Schelling Point Consensus for Subjective Tasks.
 //!
 //! Not all tasks are mathematically deterministic (e.g., "Write a funny poem").
-//! For these, HardClaw uses Schelling Point consensus.
+//! For these, `HardClaw` uses Schelling Point consensus.
 //!
 //! ## The Subjective Verification Layer
 //!
@@ -169,8 +169,8 @@ impl SchellingConsensus {
         let outcome = RoundOutcome {
             solution_id: *solution_id,
             accepted,
-            results: results.clone(),
-            deviants: deviants.clone(),
+            results,
+            deviants,
             finalized_at: now_millis(),
         };
 

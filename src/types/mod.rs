@@ -1,4 +1,4 @@
-//! Core data types for the HardClaw protocol.
+//! Core data types for the `HardClaw` protocol.
 
 mod address;
 mod amount;

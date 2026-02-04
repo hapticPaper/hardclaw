@@ -279,8 +279,7 @@ impl StakeManager {
     pub fn can_verify(&self, address: &Address) -> bool {
         self.stakes
             .get(address)
-            .map(|s| s.can_verify(self.min_stake))
-            .unwrap_or(false)
+            .is_some_and(|s| s.can_verify(self.min_stake))
     }
 
     /// Get total staked amount

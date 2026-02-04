@@ -25,7 +25,25 @@
     clippy::missing_panics_doc,
     clippy::future_not_send,
     clippy::too_many_lines,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    // Intentional numeric casts - blockchain amounts and timing are bounded
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    clippy::cast_lossless,
+    // Const fn not always beneficial for complex types
+    clippy::missing_const_for_fn,
+    // Self methods kept for API consistency even if unused
+    clippy::unused_self,
+    // must_use on every fn is excessive
+    clippy::must_use_candidate,
+    // Pass by value is fine for small Copy types
+    clippy::needless_pass_by_value,
+    // Field naming matches domain terminology
+    clippy::struct_field_names,
+    // Match arms with same body are sometimes clearer separate
+    clippy::match_same_arms
 )]
 
 pub mod crypto;

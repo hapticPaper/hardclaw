@@ -39,7 +39,7 @@ impl ProofOfVerification {
 
     /// Verify a solution against its job specification
     ///
-    /// This is the core "mining" operation in HardClaw.
+    /// This is the core "mining" operation in `HardClaw`.
     pub fn verify_solution(
         &mut self,
         job: &JobPacket,

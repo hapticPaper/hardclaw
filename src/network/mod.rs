@@ -38,11 +38,11 @@ const TOPIC_BLOCKS: &str = "hardclaw/blocks";
 /// Gossipsub topic for attestations
 const TOPIC_ATTESTATIONS: &str = "hardclaw/attestations";
 
-/// Official HardClaw bootstrap nodes using dnsaddr for dynamic peer ID resolution.
-/// Peer IDs are stored in DNS TXT records at _dnsaddr.<hostname>, allowing
-/// updates without code changes when bootstrap nodes restart.
+/// Official `HardClaw` bootstrap nodes using dnsaddr for dynamic peer ID resolution.
 ///
-/// To set up: Add TXT record at _dnsaddr.bootstrap-us.clawpaper.com with value:
+/// Peer IDs are stored in DNS TXT records at `_dnsaddr.<hostname>`, allowing
+/// updates without code changes when bootstrap nodes restart.
+/// To set up: Add TXT record at `_dnsaddr.bootstrap-us.clawpaper.com` with value:
 /// dnsaddr=/dns4/bootstrap-us.clawpaper.com/tcp/9000/p2p/<PEER_ID>
 pub const BOOTSTRAP_NODES: &[&str] = &[
     "/dnsaddr/bootstrap-us.clawpaper.com",
@@ -171,25 +171,25 @@ pub enum HardClawBehaviourEvent {
 
 impl From<kad::Event> for HardClawBehaviourEvent {
     fn from(event: kad::Event) -> Self {
-        HardClawBehaviourEvent::Kademlia(event)
+        Self::Kademlia(event)
     }
 }
 
 impl From<identify::Event> for HardClawBehaviourEvent {
     fn from(event: identify::Event) -> Self {
-        HardClawBehaviourEvent::Identify(event)
+        Self::Identify(event)
     }
 }
 
 impl From<gossipsub::Event> for HardClawBehaviourEvent {
     fn from(event: gossipsub::Event) -> Self {
-        HardClawBehaviourEvent::Gossipsub(event)
+        Self::Gossipsub(event)
     }
 }
 
 impl From<mdns::Event> for HardClawBehaviourEvent {
     fn from(event: mdns::Event) -> Self {
-        HardClawBehaviourEvent::Mdns(event)
+        Self::Mdns(event)
     }
 }
 

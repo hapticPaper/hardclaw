@@ -124,8 +124,7 @@ impl ChainState {
     pub fn balance_of(&self, address: &Address) -> HclawAmount {
         self.accounts
             .get(address)
-            .map(|a| a.balance)
-            .unwrap_or(HclawAmount::ZERO)
+            .map_or(HclawAmount::ZERO, |a| a.balance)
     }
 
     /// Transfer tokens between accounts
