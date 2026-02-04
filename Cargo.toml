@@ -1,0 +1,87 @@
+[package]
+name = "hardclaw"
+version = "0.9.1"
+edition = "2021"
+authors = ["HardClaw Collective"]
+description = "A Proof-of-Verification Protocol for the Autonomous Agent Economy"
+license = "MIT"
+repository = "https://github.com/hardclaw/hardclaw"
+keywords = ["blockchain", "proof-of-verification", "agents", "consensus"]
+categories = ["cryptography", "network-programming"]
+
+[dependencies]
+# Cryptography - using audited, production-grade crates
+ed25519-dalek = { version = "2.1", features = ["rand_core", "serde"] }
+sha2 = "0.10"
+sha3 = "0.10"
+blake3 = "1.5"
+rand = "0.8"
+rand_chacha = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = "1.3"
+hex = "0.4"
+
+# Async runtime
+tokio = { version = "1.36", features = ["full"] }
+
+# Networking
+libp2p = { version = "0.53", features = ["tcp", "noise", "yamux", "gossipsub", "mdns", "kad", "identify", "tokio", "macros"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Database (for state persistence)
+sled = "0.34"
+
+# Merkle trees
+rs_merkle = "1.4"
+
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# CLI enhancements
+dialoguer = "0.11"
+console = "0.15"
+indicatif = "0.17"
+
+# File system
+dirs = "5.0"
+
+[dev-dependencies]
+criterion = "0.5"
+proptest = "1.4"
+tokio-test = "0.4"
+
+[[bin]]
+name = "hardclaw-node"
+path = "src/main.rs"
+
+[[bin]]
+name = "hardclaw-cli"
+path = "src/cli.rs"
+
+[[bin]]
+name = "hardclaw"
+path = "src/onboarding.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = true

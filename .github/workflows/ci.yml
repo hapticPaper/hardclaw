@@ -1,0 +1,57 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release
+        run: cargo build --release --bin hardclaw-node
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hardclaw-node-linux
+          path: target/release/hardclaw-node
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: hardclaw-node-linux
+          path: ./bin
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: hardclaw
+      - name: Deploy to bootstrap nodes
+        run: |
+          chmod +x ./bin/hardclaw-node
+          for node in "bootstrap-us:us-central1-a:34.172.212.212" "bootstrap-eu:europe-west1-b:34.38.137.200"; do
+            IFS=':' read -r name zone ip <<< "$node"
+            gcloud compute scp ./bin/hardclaw-node $name:/tmp/hardclaw-node --zone=$zone
+            gcloud compute ssh $name --zone=$zone --command="sudo mv /tmp/hardclaw-node /usr/local/bin/ && sudo systemctl restart hardclaw"
+          done
