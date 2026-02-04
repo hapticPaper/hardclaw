@@ -10,6 +10,8 @@ jobs:
   publish:
     name: Publish to NPM
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
     
     steps:
       - name: Checkout code
@@ -37,8 +39,6 @@ jobs:
       - name: Publish to npm
         working-directory: hardclaw-mcp
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create package tarball
         working-directory: hardclaw-mcp
