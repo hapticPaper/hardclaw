@@ -193,7 +193,7 @@ jobs:
 
       - name: Deploy to bootstrap nodes
         run: |
-          for node in "bootstrap-us:us-central1-a" "bootstrap-eu:europe-west1-b"; do
+          for node in "bootstrap-us:us-central1-a" "bootstrap-eu:europe-west1-b" "bootstrap-us2:us-west1-a" "bootstrap-asia:asia-east1-a"; do
             VM="${node%%:*}"
             ZONE="${node##*:}"
             echo "=== Deploying to $VM ==="

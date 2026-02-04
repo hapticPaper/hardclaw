@@ -4,8 +4,10 @@ use std::io::{self, Write};
 
 use hardclaw::{
     crypto::{Keypair, hash_data},
+    generate_mnemonic, keypair_from_mnemonic,
     types::{Address, JobPacket, JobType, HclawAmount, VerificationSpec},
 };
+use sha2::{Sha256, Digest};
 
 fn main() {
     println!("╔════════════════════════════════════════════╗");
@@ -21,7 +23,8 @@ fn main() {
     println!("Session address: {}", address);
     println!();
     println!("Commands:");
-    println!("  keygen          - Generate a new keypair");
+    println!("  wallet [count]  - Generate wallet(s) with seed phrases");
+    println!("  keygen          - Generate a new keypair (no seed phrase)");
     println!("  balance <addr>  - Check account balance");
     println!("  submit <job>    - Submit a job");
     println!("  status <id>     - Check job status");
@@ -45,6 +48,56 @@ fn main() {
         }
 
         match parts[0] {
+            "wallet" => {
+                let count: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1);
+                println!();
+                println!("╔════════════════════════════════════════════════════════════════════════╗");
+                println!("║  IMPORTANT: Write down these seed phrases and store them SECURELY!    ║");
+                println!("╚════════════════════════════════════════════════════════════════════════╝");
+                println!();
+
+                for i in 1..=count {
+                    let mnemonic = generate_mnemonic();
+                    let phrase = mnemonic.to_string();
+                    let new_keypair = keypair_from_mnemonic(&mnemonic, "");
+                    let new_address = Address::from_public_key(new_keypair.public_key());
+
+                    // Derive libp2p peer ID for bootstrap node setup
+                    let mut hasher = Sha256::new();
+                    hasher.update(b"hardclaw-libp2p-identity-v1");
+                    hasher.update(new_keypair.public_key().as_bytes());
+                    let hash = hasher.finalize();
+                    let mut hash_bytes: [u8; 32] = hash.into();
+                    let secret = libp2p::identity::ed25519::SecretKey::try_from_bytes(&mut hash_bytes)
+                        .expect("SHA-256 output is valid Ed25519 seed");
+                    let ed25519_kp = libp2p::identity::ed25519::Keypair::from(secret);
+                    let libp2p_kp = libp2p::identity::Keypair::from(ed25519_kp);
+                    let peer_id = libp2p_kp.public().to_peer_id();
+
+                    println!("═══════════════════════════════════════════════════════════════════════");
+                    println!("  WALLET {}", i);
+                    println!("═══════════════════════════════════════════════════════════════════════");
+                    println!("  Address:  {}", new_address);
+                    println!("  Peer ID:  {}", peer_id);
+                    println!();
+                    println!("  Seed Phrase (24 words):");
+                    let words: Vec<&str> = phrase.split_whitespace().collect();
+                    for row in 0..6 {
+                        print!("    ");
+                        for col in 0..4 {
+                            let idx = col * 6 + row;
+                            print!("{:2}. {:<12} ", idx + 1, words[idx]);
+                        }
+                        println!();
+                    }
+                    println!();
+                    println!("  Copy-paste format:");
+                    println!("  {}", phrase);
+                    println!();
+                }
+                println!("═══════════════════════════════════════════════════════════════════════");
+            }
+
             "keygen" => {
                 let new_keypair = Keypair::generate();
                 let new_address = Address::from_public_key(new_keypair.public_key());
@@ -143,7 +196,8 @@ fn main() {
 
             "help" => {
                 println!("Commands:");
-                println!("  keygen          - Generate a new keypair");
+                println!("  wallet [count]  - Generate wallet(s) with seed phrases");
+                println!("  keygen          - Generate a new keypair (no seed phrase)");
                 println!("  balance <addr>  - Check account balance");
                 println!("  submit          - Submit a job interactively");
                 println!("  status <id>     - Check job status");
