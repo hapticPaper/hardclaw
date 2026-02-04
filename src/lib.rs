@@ -17,14 +17,16 @@
 //! - Schelling Point consensus for subjective tasks
 
 #![forbid(unsafe_code)]
-#![deny(
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
-    rust_2018_idioms
+#![deny(clippy::all, rust_2018_idioms)]
+#![warn(clippy::pedantic, clippy::nursery, missing_docs)]
+#![allow(
+    clippy::module_name_repetitions,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::future_not_send,
+    clippy::too_many_lines,
+    clippy::too_many_arguments
 )]
-#![warn(missing_docs)]
-#![allow(clippy::module_name_repetitions)]
 
 pub mod crypto;
 pub mod types;

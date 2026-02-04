@@ -80,7 +80,7 @@ impl Verifier {
         Self {
             block_producer: BlockProducer::new(
                 Keypair::from_secret(
-                    crate::crypto::SecretKey::from_bytes(keypair.public_key().as_bytes().clone())
+                    crate::crypto::SecretKey::from_bytes(*keypair.public_key().as_bytes())
                         .unwrap_or_else(|_| crate::crypto::SecretKey::generate())
                 ),
                 config.block_config.clone(),

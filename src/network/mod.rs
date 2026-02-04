@@ -278,13 +278,13 @@ impl NetworkNode {
                     .validation_mode(ValidationMode::Strict)
                     .message_id_fn(message_id_fn)
                     .build()
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    .map_err(std::io::Error::other)?;
 
                 let gossipsub = gossipsub::Behaviour::new(
                     MessageAuthenticity::Signed(key.clone()),
                     gossipsub_config,
                 )
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                .map_err(std::io::Error::other)?;
 
                 // Configure mDNS
                 let mdns = mdns::tokio::Behaviour::new(

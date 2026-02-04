@@ -50,7 +50,7 @@ pub fn keypair_from_mnemonic(mnemonic: &Mnemonic, passphrase: &str) -> Keypair {
     // Use first 32 bytes of SHA-256(seed) as Ed25519 seed
     // This matches Solana's derivation method
     let mut hasher = Sha256::new();
-    hasher.update(&seed);
+    hasher.update(seed);
     let hash = hasher.finalize();
 
     let mut ed25519_seed = [0u8; 32];
