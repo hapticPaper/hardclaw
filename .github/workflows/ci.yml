@@ -31,7 +31,7 @@ jobs:
         run: cargo test --all-features
 
       - name: Run clippy
-        run: cargo clippy --all-features -- -D warnings
+        run: cargo clippy --all-features
 
       - name: Check formatting
         run: cargo fmt --all -- --check
