@@ -493,7 +493,7 @@ pre code {
 }
 
 main section[id],
-main #top {
+main .scroll-anchor {
   scroll-margin-top: var(--nav-offset);
 }
 
