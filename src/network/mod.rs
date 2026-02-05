@@ -46,6 +46,8 @@ const TOPIC_ATTESTATIONS: &str = "hardclaw/attestations";
 pub const BOOTSTRAP_NODES: &[&str] = &[
     "/dnsaddr/bootstrap-us.clawpaper.com",
     "/dnsaddr/bootstrap-eu.clawpaper.com",
+    "/dnsaddr/bootstrap-us2.clawpaper.com",
+    "/dnsaddr/bootstrap-asia.clawpaper.com",
 ];
 
 /// Network message types (serialized for gossipsub)
