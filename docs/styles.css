@@ -492,8 +492,8 @@ pre code {
   transform: translateY(0);
 }
 
-main#top,
-main [id] {
+main section[id],
+main #top {
   scroll-margin-top: var(--nav-offset);
 }
 
