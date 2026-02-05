@@ -9,7 +9,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash as StdHash, Hasher};
 use std::time::Duration;
 
-use hickory_resolver::{config::*, TokioAsyncResolver};
+use hickory_resolver::{config::{ResolverConfig, ResolverOpts}, TokioAsyncResolver};
 use libp2p::{
     futures::StreamExt,
     gossipsub::{self, IdentTopic, MessageAuthenticity, ValidationMode},
@@ -572,7 +572,7 @@ impl NetworkNode {
                     self.swarm
                         .behaviour_mut()
                         .kademlia
-                        .add_address(&peer_id, address.clone());
+                        .add_address(&peer_id, address);
                     // Trigger a bootstrap now that we have a peer
                     if let Err(e) = self.swarm.behaviour_mut().kademlia.bootstrap() {
                         debug!(error = ?e, "Bootstrap attempt after connection failed (may happen if only 1 peer)");
@@ -583,7 +583,7 @@ impl NetworkNode {
                     self.swarm
                         .behaviour_mut()
                         .kademlia
-                        .add_address(&peer_id, send_back_addr.clone());
+                        .add_address(&peer_id, send_back_addr);
                 }
 
                 let _ = self
@@ -807,15 +807,14 @@ fn derive_libp2p_keypair(wallet_pubkey: &crate::crypto::PublicKey) -> libp2p::id
 /// Returns the resolved multiaddrs (e.g. `/dns4/host/tcp/9000/p2p/<peer_id>`).
 /// Non-dnsaddr addresses are returned as-is.
 async fn resolve_dnsaddr(addr_str: &str) -> Vec<String> {
-    let hostname = match addr_str.strip_prefix("/dnsaddr/") {
-        Some(h) => h,
-        None => return vec![addr_str.to_string()],
+    let Some(hostname) = addr_str.strip_prefix("/dnsaddr/") else {
+        return vec![addr_str.to_string()];
     };
 
     let lookup_name = format!("_dnsaddr.{hostname}");
-    let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
+    let dns_resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
 
-    let txt_records = match resolver.txt_lookup(&lookup_name).await {
+    let txt_records = match dns_resolver.txt_lookup(&lookup_name).await {
         Ok(records) => records,
         Err(e) => {
             warn!(hostname = %hostname, error = %e, "Failed to resolve dnsaddr TXT records");
@@ -823,20 +822,20 @@ async fn resolve_dnsaddr(addr_str: &str) -> Vec<String> {
         }
     };
 
-    let mut resolved = Vec::new();
+    let mut addresses = Vec::new();
     for record in txt_records {
         let txt = record.to_string();
         if let Some(multiaddr_str) = txt.strip_prefix("dnsaddr=") {
             info!(addr = %multiaddr_str, "Resolved bootstrap dnsaddr");
-            resolved.push(multiaddr_str.to_string());
+            addresses.push(multiaddr_str.to_string());
         }
     }
 
-    if resolved.is_empty() {
+    if addresses.is_empty() {
         warn!(hostname = %hostname, "No dnsaddr TXT records found");
         vec![addr_str.to_string()]
     } else {
-        resolved
+        addresses
     }
 }
 
