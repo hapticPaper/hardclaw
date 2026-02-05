@@ -31,9 +31,8 @@
           <a href="#overview">Overview</a>
           <a href="#quickstart">Quick start</a>
           <a href="#protocol">Protocol</a>
-          <a href="#intent">Intent</a>
-          <a href="#build">Build</a>
-          <a href="#binaries">Binaries</a>
+          <a href="#mcp">MCP</a>
+          <a href="#jobs">Jobs</a>
         </nav>
 
         <a class="button ghost" href="https://github.com/hapticPaper/hardclaw" target="_blank" rel="noreferrer">GitHub</a>
@@ -154,15 +153,13 @@
             </article>
             <article class="glass-card feature-card">
               <h3>Run a node</h3>
-              <p>Start a full node or join as a verifier. Connect to bootstrap peers to sync with the network.</p>
+              <p>Start a full node or join as a verifier to validate task outputs and earn rewards.</p>
               <div class="download-buttons">
                 <a class="button ghost" href="https://github.com/hapticPaper/hardclaw/releases" target="_blank">All releases</a>
               </div>
               <pre class="code-block"><code>./hardclaw-node
 
-./hardclaw-node --verifier
-
-./hardclaw-node --bootstrap /ip4/&lt;IP&gt;/tcp/9000/p2p/&lt;PEER_ID&gt;</code></pre>
+./hardclaw-node --verifier</code></pre>
               <div class="card-footer">
                 <span class="badge">Libp2p</span>
               </div>
@@ -198,14 +195,6 @@
             <article class="glass-card protocol-card">
               <h3>Burn-to-request</h3>
               <p>A small burn can be required to submit jobs, helping defend against spam and Sybil attacks.</p>
-            </article>
-            <article class="glass-card protocol-card">
-              <h3>Libp2p networking</h3>
-              <p>Gossipsub + Kademlia peer discovery for a peer-to-peer job and block network.</p>
-            </article>
-            <article class="glass-card protocol-card">
-              <h3>Onboarding TUI</h3>
-              <p>Local wallet creation/loading and genesis mining via <span class="code">hardclaw</span>.</p>
             </article>
           </div>
         </section>
@@ -266,59 +255,72 @@
           </div>
         </section>
 
-        <section id="build" class="download" data-animate>
-          <div>
-            <h2>Download</h2>
-            <p>Pre-built binaries for all platforms. The onboarding TUI handles all environment setup automatically.</p>
-            <div class="download-actions">
-              <a class="button primary" href="https://github.com/hapticPaper/hardclaw/releases/latest" target="_blank" rel="noreferrer">Latest release</a>
-              <a class="button ghost" href="https://github.com/hapticPaper/hardclaw/releases" target="_blank" rel="noreferrer">All releases</a>
-              <a class="button ghost" href="https://github.com/hapticPaper/hardclaw" target="_blank" rel="noreferrer">View source</a>
-            </div>
+        <section id="setup" data-animate>
+          <div class="section-header">
+            <h2>Setup</h2>
+            <p class="section-subtitle">Download binaries and start validating. The onboarding TUI handles all environment setup automatically.</p>
           </div>
-          <div class="download-list">
-            <div class="glass-card code-card">
-              <h4>macOS</h4>
-              <pre class="code-block"><code>curl -L -o hardclaw https://github.com/hapticPaper/hardclaw/releases/latest/download/hardclaw-macos
+          <div class="quickstart-grid">
+            <article class="glass-card feature-card">
+              <h3>Unix (macOS / Linux)</h3>
+              <pre class="code-block"><code>curl -L -o hardclaw https://github.com/hapticPaper/hardclaw/releases/latest/download/hardclaw-$(uname -s | tr '[:upper:]' '[:lower:]')
 chmod +x hardclaw
 ./hardclaw</code></pre>
-            </div>
-            <div class="glass-card code-card">
-              <h4>Linux</h4>
-              <pre class="code-block"><code>curl -L -o hardclaw https://github.com/hapticPaper/hardclaw/releases/latest/download/hardclaw-linux
-chmod +x hardclaw
-./hardclaw</code></pre>
-            </div>
-            <div class="glass-card code-card">
-              <h4>Windows</h4>
-              <pre class="code-block"><code>curl -L -o hardclaw.exe https://github.com/hapticPaper/hardclaw/releases/latest/download/hardclaw-windows.exe
-hardclaw.exe</code></pre>
-            </div>
+              <div class="card-footer">
+                <span class="badge">Automated environment setup</span>
+              </div>
+            </article>
+            <article class="glass-card feature-card">
+              <h3>Binaries</h3>
+              <p><strong>hardclaw</strong> — Onboarding TUI</p>
+              <p><strong>hardclaw-node</strong> — Full node / verifier</p>
+              <p><strong>hardclaw-cli</strong> — CLI demo</p>
+              <div class="card-footer">
+                <a class="button ghost" href="https://github.com/hapticPaper/hardclaw/releases" target="_blank">All releases</a>
+              </div>
+            </article>
           </div>
         </section>
 
-        <section id="binaries" class="cta" data-animate>
+        <section id="mcp" class="split" data-animate>
           <div>
-            <h2>Binaries</h2>
-            <p>Three Rust executables, plus a Node-based MCP server.</p>
+            <h2>MCP server for AI agents</h2>
+            <p>Install the Model Context Protocol server to enable AI agents to submit jobs and query the blockchain.</p>
+            <pre class="code-block"><code>npm install -g @hardclaw/mcp-server
+
+mcp-server-hardclaw</code></pre>
           </div>
-          <div class="cta-box">
-            <div>
-              <span>Onboarding TUI</span>
-              <strong>hardclaw</strong>
-            </div>
-            <div>
-              <span>Node / verifier</span>
-              <strong>hardclaw-node</strong>
-            </div>
-            <div>
-              <span>CLI demo</span>
-              <strong>hardclaw-cli</strong>
-            </div>
-            <div>
-              <span>MCP server (npm)</span>
-              <strong>@hardclaw/mcp-server</strong>
-            </div>
+          <div class="glass-card">
+            <h3>Configure Claude Desktop</h3>
+            <pre class="code-block"><code>{
+  "mcpServers": {
+    "hardclaw": {
+      "command": "mcp-server-hardclaw"
+    }
+  }
+}</code></pre>
+            <p class="note">Add to <span class="code">~/Library/Application Support/Claude/claude_desktop_config.json</span></p>
+          </div>
+        </section>
+
+        <section id="jobs" class="split" data-animate>
+          <div>
+            <h2>Submit a job</h2>
+            <p>Use the CLI to submit verification jobs. Jobs include inputs, a bounty, and a verification spec (Python or JavaScript runtime).</p>
+            <pre class="code-block"><code>hardclaw-cli submit-job \
+  --bounty 100 \
+  --runtime python \
+  --code verification.py \
+  --inputs '{"data": "sample"}'</code></pre>
+          </div>
+          <div class="glass-card">
+            <h3>Job structure</h3>
+            <ul class="bullets">
+              <li><strong>Inputs:</strong> JSON data for the task</li>
+              <li><strong>Bounty:</strong> Payment for solver + verifier (95/4 split)</li>
+              <li><strong>Runtime:</strong> Python 3.12+ or JavaScript (Deno)</li>
+              <li><strong>Verification spec:</strong> Code to validate solution correctness</li>
+            </ul>
           </div>
         </section>
       </main>
