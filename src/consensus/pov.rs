@@ -10,6 +10,7 @@ use crate::types::{
     now_millis, Block, JobPacket, SolutionCandidate, VerificationResult, VerificationSpec,
     VerifierAttestation,
 };
+use crate::verifier::runtime::{PythonRuntime, JavaScriptRuntime, VerificationRuntime};
 
 use super::{ConsensusError, SolutionVerifier};
 
@@ -68,6 +69,14 @@ impl ProofOfVerification {
                 module_hash,
                 entry_point,
             } => self.verify_wasm(&job.input, &solution.output, module_hash, entry_point),
+
+            VerificationSpec::PythonScript { code_hash, code } => {
+                self.verify_python_script(code_hash, code, &job.input, &solution.output)
+            }
+
+            VerificationSpec::JavaScriptScript { code_hash, code } => {
+                self.verify_javascript_script(code_hash, code, &job.input, &solution.output)
+            }
 
             VerificationSpec::SchellingPoint { .. } => {
                 // Schelling point verification is handled separately
@@ -139,6 +148,68 @@ impl ProofOfVerification {
 
         // Placeholder: would execute WASM here
         (true, None)
+    }
+
+    /// Verify using Python script
+    ///
+    /// Executes Python code in a sandboxed environment with resource limits.
+    fn verify_python_script(
+        &self,
+        code_hash: &Hash,
+        code: &str,
+        input: &[u8],
+        output: &[u8],
+    ) -> (bool, Option<String>) {
+        // Validate code hash
+        let actual_hash = hash_data(code.as_bytes());
+        if actual_hash != *code_hash {
+            return (
+                false,
+                Some("Python code hash mismatch - possible tampering".to_string()),
+            );
+        }
+
+        // Check if Python runtime is available
+        if !PythonRuntime::is_available() {
+            return (
+                false,
+                Some("Python 3.8+ not available on this system".to_string()),
+            );
+        }
+
+        // Create runtime and execute
+        let runtime = PythonRuntime::new();
+        match runtime.execute(code, input, output) {
+            Ok(result) => (result, None),
+            Err(e) => (false, Some(format!("Python execution failed: {}", e))),
+        }
+    }
+
+    /// Verify using JavaScript/TypeScript script
+    ///
+    /// Executes JS/TS code in a sandboxed Deno environment with resource limits.
+    fn verify_javascript_script(
+        &self,
+        code_hash: &Hash,
+        code: &str,
+        input: &[u8],
+        output: &[u8],
+    ) -> (bool, Option<String>) {
+        // Validate code hash
+        let actual_hash = hash_data(code.as_bytes());
+        if actual_hash != *code_hash {
+            return (
+                false,
+                Some("JavaScript code hash mismatch - possible tampering".to_string()),
+            );
+        }
+
+        // Create runtime and execute (Deno is embedded, always available)
+        let runtime = JavaScriptRuntime::new();
+        match runtime.execute(code, input, output) {
+            Ok(result) => (result, None),
+            Err(e) => (false, Some(format!("JavaScript execution failed: {}", e))),
+        }
     }
 
     /// Validate a complete block

@@ -9,9 +9,11 @@
 
 mod honey_pot;
 mod stake;
+pub mod runtime;
 
 pub use honey_pot::{HoneyPotDetector, HoneyPotGenerator};
 pub use stake::{SlashingReason, StakeInfo, StakeManager};
+pub use runtime::{ValidatorCapabilities, LanguageSupport, EnvironmentCheck};
 
 use crate::consensus::{BlockProducer, BlockProducerConfig};
 use crate::crypto::{Hash, Keypair, PublicKey};

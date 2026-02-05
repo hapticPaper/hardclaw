@@ -61,6 +61,11 @@ indicatif = "0.17"
 # File system
 dirs = "5.0"
 
+# Multi-language verification runtimes
+pyo3 = { version = "0.20", features = ["auto-initialize", "abi3-py38"] }
+deno_core = "0.258"
+sha256 = "1.5"
+
 [dev-dependencies]
 criterion = "0.5"
 proptest = "1.4"

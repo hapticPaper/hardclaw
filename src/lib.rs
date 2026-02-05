@@ -50,6 +50,7 @@ pub mod consensus;
 pub mod crypto;
 pub mod mempool;
 pub mod network;
+pub mod safety;
 pub mod schelling;
 pub mod state;
 pub mod tokenomics;

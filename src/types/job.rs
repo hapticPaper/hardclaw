@@ -53,6 +53,26 @@ pub enum VerificationSpec {
         entry_point: String,
     },
 
+    /// Python verification script
+    /// 
+    /// Script must define a `verify(input_bytes: bytes, output_bytes: bytes) -> bool` function
+    PythonScript {
+        /// Hash of the verification code
+        code_hash: Hash,
+        /// The Python verification script
+        code: String,
+    },
+
+    /// JavaScript/TypeScript verification script
+    ///
+    /// Script must define a `verify(input: Uint8Array, output: Uint8Array): boolean` function
+    JavaScriptScript {
+        /// Hash of the verification code
+        code_hash: Hash,
+        /// The JavaScript/TypeScript code
+        code: String,
+    },
+
     /// Schelling point voting (for subjective tasks)
     SchellingPoint {
         /// Minimum number of voters

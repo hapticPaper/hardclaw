@@ -23,7 +23,7 @@ use ratatui::{
     Frame, Terminal,
 };
 
-use hardclaw::{types::Block as HcBlock, wallet::Wallet};
+use hardclaw::{types::Block as HcBlock, wallet::Wallet, verifier::EnvironmentCheck};
 
 /// Application state
 enum AppState {
@@ -38,6 +38,10 @@ enum AppState {
     LoadWallet,
     WalletLoaded {
         address: String,
+    },
+    EnvironmentSetup,
+    EnvironmentChecked {
+        checks: Vec<EnvironmentCheck>,
     },
     RunNode,
     GenesisMined {
@@ -84,6 +88,7 @@ impl App {
             vec![
                 "Load Wallet",
                 "Create New Wallet",
+                "Check Verification Environment",
                 "Run Verifier Node",
                 "Help",
                 "Quit",
@@ -92,6 +97,7 @@ impl App {
             vec![
                 "Create Wallet",
                 "Load Wallet",
+                "Check Verification Environment",
                 "Run Verifier Node",
                 "Help",
                 "Quit",
@@ -150,6 +156,12 @@ impl App {
             AppState::WalletLoaded { .. } => {
                 self.state = AppState::MainMenu;
             }
+            AppState::EnvironmentSetup => {
+                // Shouldn't receive input here
+            }
+            AppState::EnvironmentChecked { .. } => {
+                self.state = AppState::MainMenu;
+            }
             AppState::RunNode => match key {
                 KeyCode::Enter | KeyCode::Char('y') => {
                     self.mine_genesis();
@@ -185,6 +197,9 @@ impl App {
             }
             "Load Wallet" => {
                 self.state = AppState::LoadWallet;
+            }
+            "Check Verification Environment" => {
+                self.check_environment();
             }
             "Run Verifier Node" => {
                 if self.wallet.is_none() {
@@ -229,6 +244,7 @@ impl App {
                 self.menu = MenuState::new(vec![
                     "Load Wallet",
                     "Create New Wallet",
+                    "Check Verification Environment",
                     "Run Verifier Node",
                     "Help",
                     "Quit",
@@ -266,6 +282,11 @@ impl App {
         }
     }
 
+    fn check_environment(&mut self) {
+        let checks = EnvironmentCheck::check_all();
+        self.state = AppState::EnvironmentChecked { checks };
+    }
+
     fn ui(&self, frame: &mut Frame) {
         let size = frame.area();
 
@@ -297,6 +318,10 @@ impl App {
             AppState::LoadWallet => self.render_load_wallet(frame, chunks[1]),
             AppState::WalletLoaded { address } => {
                 self.render_wallet_loaded(frame, chunks[1], address);
+            }
+            AppState::EnvironmentSetup => self.render_environment_setup(frame, chunks[1]),
+            AppState::EnvironmentChecked { checks } => {
+                self.render_environment_checked(frame, chunks[1], checks);
             }
             AppState::RunNode => self.render_run_node(frame, chunks[1]),
             AppState::GenesisMined { block_hash } => {
@@ -344,7 +369,9 @@ impl App {
             AppState::WalletCreated { .. }
             | AppState::WalletLoaded { .. }
             | AppState::GenesisMined { .. }
+            | AppState::EnvironmentChecked { .. }
             | AppState::Help => "Press any key to continue",
+            AppState::EnvironmentSetup => "Checking environment...",
             AppState::NodeRunning => "q: Stop node | Ctrl+C: Force quit",
             AppState::Quit => "",
         };
@@ -848,6 +875,112 @@ impl App {
         );
 
         frame.render_widget(paragraph, centered_rect(50, 40, area));
+    }
+
+    fn render_environment_setup(&self, frame: &mut Frame, area: Rect) {
+        let text = vec![
+            Line::from(Span::styled(
+                "🔍 Checking Verification Environment",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from("Please wait..."),
+        ];
+
+        let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        );
+
+        frame.render_widget(paragraph, centered_rect(60, 30, area));
+    }
+
+    fn render_environment_checked(&self, frame: &mut Frame, area: Rect, checks: &[EnvironmentCheck]) {
+        let mut text = vec![
+            Line::from(Span::styled(
+                "🔍 Verification Environment Status",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+        ];
+
+        for check in checks {
+            let (status, color) = if check.available {
+                ("✓", Color::Green)
+            } else {
+                ("✗", Color::Red)
+            };
+
+            text.push(Line::from(vec![
+                Span::styled(format!("[{}] ", status), Style::default().fg(color)),
+                Span::styled(
+                    check.language.display_name(),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(": "),
+                Span::raw(check.version.as_deref().unwrap_or("not available")),
+            ]));
+
+            // Show warnings
+            for warning in &check.warnings {
+                text.push(Line::from(Span::styled(
+                    format!("    ⚠ {}", warning),
+                    Style::default().fg(Color::Yellow),
+                )));
+            }
+
+            // Show setup instructions if not available
+            if let Some(instructions) = &check.setup_instructions {
+                text.push(Line::from(""));
+                for line in instructions.lines() {
+                    text.push(Line::from(Span::styled(
+                        format!("    {}", line),
+                        Style::default().fg(Color::DarkGray),
+                    )));
+                }
+            }
+
+            text.push(Line::from(""));
+        }
+
+        // Summary
+        let available_count = checks.iter().filter(|c| c.available).count();
+        let total_count = checks.len();
+
+        text.push(Line::from(""));
+        text.push(Line::from(Span::styled(
+            format!("Supported Languages: {}/{}", available_count, total_count),
+            Style::default()
+                .fg(if available_count == total_count {
+                    Color::Green
+                } else {
+                    Color::Yellow
+                })
+                .add_modifier(Modifier::BOLD),
+        )));
+
+        text.push(Line::from(""));
+        text.push(Line::from(Span::styled(
+            "Press any key to return to menu",
+            Style::default().fg(Color::DarkGray),
+        )));
+
+        let paragraph = Paragraph::new(text)
+            .alignment(Alignment::Left)
+            .wrap(Wrap { trim: false })
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Cyan))
+                    .title(" Environment Check "),
+            );
+
+        frame.render_widget(paragraph, centered_rect(80, 80, area));
     }
 }
 
