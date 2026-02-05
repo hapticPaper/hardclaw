@@ -67,12 +67,8 @@ section:last-of-type {
   top: 0;
   padding: 20px 0;
   z-index: 10;
-  backdrop-filter: blur(24px) saturate(180%);
-  background: linear-gradient(
-    180deg, 
-    rgba(10, 14, 26, 0.95) 0%, 
-    rgba(10, 14, 26, 0.7) 100%
-  );
+  backdrop-filter: blur(20px) saturate(180%);
+  background: var(--glass-bg);
   border-bottom: 1px solid var(--glass-border);
   transition: all 0.3s var(--transition-smooth);
 }
@@ -80,7 +76,7 @@ section:last-of-type {
 .nav::before {
   content: '';
   position: absolute;
-  top: 0;
+  bottom: 0;
   left: 0;
   right: 0;
   height: 1px;
@@ -90,7 +86,7 @@ section:last-of-type {
     var(--glass-highlight),
     transparent
   );
-  opacity: 0.5;
+  opacity: 0.3;
 }
 
 .brand {
@@ -690,6 +686,8 @@ section:last-of-type {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 32px;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 .protocol-card {
@@ -737,6 +735,8 @@ section:last-of-type {
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 64px;
   align-items: start;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 .split > div:first-child {
@@ -863,6 +863,8 @@ section:last-of-type {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 64px;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 .download > div:first-child {
@@ -931,6 +933,8 @@ section:last-of-type {
 .cta {
   padding: 0;
   text-align: center;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 .cta h2 {
