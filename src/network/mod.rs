@@ -569,13 +569,21 @@ impl NetworkNode {
                 // When a connection is established, add the peer to Kademlia
                 // This is crucial for bootstrap nodes discovered via DNS where the PeerID wasn't known initially
                 if let libp2p::core::ConnectedPoint::Dialer { address, .. } = endpoint {
-                    self.swarm.behaviour_mut().kademlia.add_address(&peer_id, address.clone());
+                    self.swarm
+                        .behaviour_mut()
+                        .kademlia
+                        .add_address(&peer_id, address.clone());
                     // Trigger a bootstrap now that we have a peer
                     if let Err(e) = self.swarm.behaviour_mut().kademlia.bootstrap() {
                         debug!(error = ?e, "Bootstrap attempt after connection failed (may happen if only 1 peer)");
                     }
-                } else if let libp2p::core::ConnectedPoint::Listener { send_back_addr, .. } = endpoint {
-                     self.swarm.behaviour_mut().kademlia.add_address(&peer_id, send_back_addr.clone());
+                } else if let libp2p::core::ConnectedPoint::Listener { send_back_addr, .. } =
+                    endpoint
+                {
+                    self.swarm
+                        .behaviour_mut()
+                        .kademlia
+                        .add_address(&peer_id, send_back_addr.clone());
                 }
 
                 let _ = self

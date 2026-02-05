@@ -292,15 +292,23 @@ impl HardClawNode {
         match event {
             NetworkEvent::PeerConnected(peer) => {
                 self.peer_count += 1;
-                info!("Network Status: Connected to {} peer(s) (+{})", self.peer_count, peer);
+                info!(
+                    "Network Status: Connected to {} peer(s) (+{})",
+                    self.peer_count, peer
+                );
             }
             NetworkEvent::PeerDisconnected(peer) => {
                 if self.peer_count > 0 {
                     self.peer_count -= 1;
                 }
-                info!("Network Status: Connected to {} peer(s) (-{})", self.peer_count, peer);
+                info!(
+                    "Network Status: Connected to {} peer(s) (-{})",
+                    self.peer_count, peer
+                );
                 if self.peer_count == 0 {
-                    warn!("Network Status: Disconnected from all peers. Waiting for connections...");
+                    warn!(
+                        "Network Status: Disconnected from all peers. Waiting for connections..."
+                    );
                 }
             }
             NetworkEvent::JobReceived(job) => {
