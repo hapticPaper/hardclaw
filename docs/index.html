@@ -52,9 +52,9 @@
               <a class="button ghost" href="#protocol">Read the protocol</a>
             </div>
             <div class="hero-meta">
-              <span>🦀 Rust</span>
-              <span>🌐 Libp2p</span>
-              <span>🔓 Open-source</span>
+              <span>Rust</span>
+              <span>Libp2p</span>
+              <span>Open-source</span>
             </div>
           </div>
           <div class="hero-visual">
@@ -135,29 +135,34 @@
         <section id="quickstart" class="quickstart-section" data-animate>
           <div class="section-header">
             <h2>Quick start</h2>
-            <p class="section-subtitle">Install from source, create a wallet, run a node, and optionally join as a verifier.</p>
+            <p class="section-subtitle">Download pre-built binaries for your platform. The onboarding TUI automatically sets up your validator environment.</p>
           </div>
           <div class="quickstart-grid">
             <article class="glass-card feature-card">
-              <div class="card-icon">📦</div>
-              <h3>Install + onboard</h3>
-              <p>Use the TUI to create/load a wallet and automatically set up your validator environment.</p>
-              <pre class="code-block"><code>cargo install --path .
-
-hardclaw</code></pre>
+              <h3>Download + onboard</h3>
+              <p>Download the latest release for your platform. The TUI automatically installs Python 3.12+, creates an isolated venv, installs dependencies, and optionally sets up AI models.</p>
+              <div class="download-buttons">
+                <a class="button primary" href="https://github.com/hapticPaper/hardclaw/releases/latest/download/hardclaw-macos" download>macOS</a>
+                <a class="button primary" href="https://github.com/hapticPaper/hardclaw/releases/latest/download/hardclaw-linux" download>Linux</a>
+                <a class="button primary" href="https://github.com/hapticPaper/hardclaw/releases/latest/download/hardclaw-windows.exe" download>Windows</a>
+              </div>
+              <pre class="code-block"><code>./hardclaw</code></pre>
               <div class="card-footer">
-                <span class="badge">Automatic setup</span>
+                <span class="badge">Automated setup</span>
+                <span class="badge">Isolated sandbox</span>
               </div>
             </article>
             <article class="glass-card feature-card">
-              <div class="card-icon">🚀</div>
               <h3>Run a node</h3>
-              <p>Start a full node, or join as a verifier and connect to a bootstrap peer.</p>
-              <pre class="code-block"><code>hardclaw-node
+              <p>Start a full node or join as a verifier. Connect to bootstrap peers to sync with the network.</p>
+              <div class="download-buttons">
+                <a class="button ghost" href="https://github.com/hapticPaper/hardclaw/releases" target="_blank">All releases</a>
+              </div>
+              <pre class="code-block"><code>./hardclaw-node
 
-hardclaw-node --verifier
+./hardclaw-node --verifier
 
-hardclaw-node --bootstrap /ip4/&lt;IP&gt;/tcp/9000/p2p/&lt;PEER_ID&gt;</code></pre>
+./hardclaw-node --bootstrap /ip4/&lt;IP&gt;/tcp/9000/p2p/&lt;PEER_ID&gt;</code></pre>
               <div class="card-footer">
                 <span class="badge">Libp2p</span>
               </div>
@@ -169,42 +174,34 @@ hardclaw-node --bootstrap /ip4/&lt;IP&gt;/tcp/9000/p2p/&lt;PEER_ID&gt;</code></p
 
         <section id="protocol" class="grid" data-animate>
           <article class="glass-card protocol-card">
-            <div class="card-icon-small">⚡</div>
             <h3>Proof-of-Verification (PoV)</h3>
             <p>Verifiers produce blocks by checking solutions to real tasks. The protocol rewards verification, not hash power.</p>
           </article>
           <article class="glass-card protocol-card">
-            <div class="card-icon-small">🍯</div>
             <h3>Honey Pot Defense</h3>
             <p>The protocol injects fake solutions to detect lazy verifiers. Approving one can slash stake.</p>
           </article>
           <article class="glass-card protocol-card">
-            <div class="card-icon-small">🎯</div>
             <h3>Schelling point voting</h3>
             <p>Subjective tasks use commit/reveal voting with redundancy to find honest consensus.</p>
           </article>
           <article class="glass-card protocol-card">
-            <div class="card-icon-small">🔒</div>
             <h3>Stake + slashing</h3>
             <p>Verifier stake is tracked at protocol level. Bad attestations can be penalized.</p>
           </article>
           <article class="glass-card protocol-card">
-            <div class="card-icon-small">💰</div>
             <h3>Tokenomics</h3>
             <p>Fee splits are enforced at protocol level: 95% solver, 4% verifier, 1% burn.</p>
           </article>
           <article class="glass-card protocol-card">
-            <div class="card-icon-small">🔥</div>
             <h3>Burn-to-request</h3>
             <p>A small burn can be required to submit jobs, helping defend against spam and Sybil attacks.</p>
           </article>
           <article class="glass-card protocol-card">
-            <div class="card-icon-small">🌐</div>
             <h3>Libp2p networking</h3>
             <p>Gossipsub + Kademlia peer discovery for a peer-to-peer job and block network.</p>
           </article>
           <article class="glass-card protocol-card">
-            <div class="card-icon-small">💻</div>
             <h3>Onboarding TUI</h3>
             <p>Local wallet creation/loading and genesis mining via <span class="code">hardclaw</span>.</p>
           </article>

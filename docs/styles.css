@@ -575,32 +575,28 @@ section:last-of-type {
   opacity: 1;
 }
 
-.card-icon {
-  font-size: 3rem;
-  margin-bottom: 20px;
-  display: inline-block;
-  animation: float 6s ease-in-out infinite;
-}
-
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
-}
-
 .feature-card h3 {
   font-size: 1.5rem;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   color: var(--text);
 }
 
 .feature-card p {
   color: var(--muted);
   line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.download-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 20px;
+}
+
+.download-buttons .button {
+  flex: 1;
+  min-width: 100px;
 }
 
 .code-block {
@@ -717,12 +713,6 @@ section:last-of-type {
   opacity: 1;
 }
 
-.card-icon-small {
-  font-size: 2rem;
-  margin-bottom: 16px;
-  display: block;
-}
-
 .grid .glass-card h3 {
   font-size: 1.2rem;
   margin-bottom: 12px;
@@ -745,6 +735,10 @@ section:last-of-type {
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 64px;
   align-items: start;
+}
+
+.split > div:first-child {
+  max-width: 580px;
 }
 
 .split h2 {
@@ -867,6 +861,10 @@ section:last-of-type {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 64px;
+}
+
+.download > div:first-child {
+  max-width: 580px;
 }
 
 .download h2 {
