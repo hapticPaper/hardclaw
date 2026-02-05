@@ -4,7 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>HardClaw — Proof-of-Verification Protocol</title>
-    <meta name="description" content="HardClaw is a Proof-of-Verification protocol where verification is the work. Learn how to onboard, run an agentic worker, or validate the network." />
+    <meta
+      name="description"
+      content="HardClaw is a Proof-of-Verification protocol where verification is the work. Run a verifier node, submit jobs, and validate real task outputs."
+    />
+    <link rel="icon" href="assets/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -13,22 +20,26 @@
   <body>
     <div class="page">
       <header class="nav">
-        <div class="brand">
+        <a class="brand" href="#top">
           <div class="logo">
-            <span></span>
+            <img src="assets/claw_logo.jpeg" alt="HardClaw" />
           </div>
           <span>HardClaw</span>
-        </div>
-        <nav class="nav-links">
-          <a href="#what">What it is</a>
-          <a href="#how">How it works</a>
-          <a href="#onboard">Onboard</a>
-          <a href="#download">Download</a>
+        </a>
+
+        <nav class="nav-links" aria-label="Page">
+          <a href="#overview">Overview</a>
+          <a href="#quickstart">Quick start</a>
+          <a href="#protocol">Protocol</a>
+          <a href="#intent">Intent</a>
+          <a href="#build">Build</a>
+          <a href="#binaries">Binaries</a>
         </nav>
-        <a class="button ghost" href="https://github.com/hardclaw/hardclaw" target="_blank" rel="noreferrer">GitHub</a>
+
+        <a class="button ghost" href="https://github.com/hapticPaper/hardclaw" target="_blank" rel="noreferrer">GitHub</a>
       </header>
 
-      <main>
+      <main id="top">
         <section class="hero" data-animate>
           <div class="hero-content">
             <p class="eyebrow">Proof-of-Verification Protocol</p>
@@ -37,13 +48,14 @@
               HardClaw is a blockchain protocol where verifiers cryptographically check real task outputs. No wasted hashes — just useful work, validated.
             </p>
             <div class="hero-actions">
-              <a class="button primary" href="#download">Download binaries</a>
-              <a class="button ghost" href="#onboard">Onboard now</a>
+              <a class="button primary" href="#quickstart">Quick start</a>
+              <a class="button ghost" href="#protocol">Read the protocol</a>
             </div>
             <div class="hero-meta">
               <span>Open-source</span>
               <span>Rust</span>
               <span>Libp2p</span>
+              <span>MCP</span>
             </div>
           </div>
           <div class="hero-card" aria-hidden="true">
@@ -52,7 +64,7 @@
                 <div class="dot"></div>
                 <div>
                   <strong>Verifier online</strong>
-                  <p>Proof-of-Verification node syncing</p>
+                  <p>Node syncing and validating task outputs</p>
                 </div>
               </div>
               <div class="metric">
@@ -70,35 +82,143 @@
           </div>
         </section>
 
-        <section id="what" class="grid" data-animate>
+        <section id="overview" class="split" data-animate>
+          <div>
+            <h2>What is HardClaw?</h2>
+            <p>
+              HardClaw is a working prototype of a blockchain protocol where verifiers earn rewards by checking the correctness of real task outputs.
+              Instead of proving wasted compute (hashes), the chain secures itself by proving verification.
+            </p>
+            <p class="note">
+              This repo includes a local onboarding TUI, a CLI demo, a libp2p node, and an MCP server. Marketplace and full payout flows are still in
+              progress.
+            </p>
+          </div>
+          <div class="card roles">
+            <h3>Protocol roles</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Action</th>
+                  <th>Reward</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Requester</td>
+                  <td>Submits jobs with bounties</td>
+                  <td>Gets verified work done</td>
+                </tr>
+                <tr>
+                  <td>Solver</td>
+                  <td>Executes work, submits solutions</td>
+                  <td>95% of bounty</td>
+                </tr>
+                <tr>
+                  <td>Verifier</td>
+                  <td>Verifies solutions, produces blocks</td>
+                  <td>4% of bounty</td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="note">1% of every bounty is burned to offset state bloat.</p>
+          </div>
+        </section>
+
+        <section id="quickstart" class="onboard" data-animate>
+          <div class="section-head">
+            <h2>Quick start</h2>
+            <p>Install from source, create a wallet, run a node, and optionally join as a verifier.</p>
+          </div>
+          <div class="onboard-grid">
+            <article class="card glassy">
+              <h3>Install + onboard</h3>
+              <p>Use the TUI to create/load a wallet and set up genesis locally.</p>
+              <pre><code>cargo install --path .
+
+hardclaw</code></pre>
+            </article>
+            <article class="card glassy">
+              <h3>Run a node</h3>
+              <p>Start a full node, or join as a verifier and connect to a bootstrap peer.</p>
+              <pre><code>hardclaw-node
+
+hardclaw-node --verifier
+
+hardclaw-node --bootstrap /ip4/&lt;IP&gt;/tcp/9000/p2p/&lt;PEER_ID&gt;</code></pre>
+            </article>
+          </div>
+        </section>
+
+        <section id="protocol" class="grid" data-animate>
           <article class="card">
-            <h3>Proof-of-Verification</h3>
-            <p>Blocks are produced by verifying solutions to real tasks. The protocol rewards verifiers, not hash power.</p>
+            <h3>Proof-of-Verification (PoV)</h3>
+            <p>Verifiers produce blocks by checking solutions to real tasks. The protocol rewards verification, not hash power.</p>
           </article>
           <article class="card">
             <h3>Honey Pot Defense</h3>
-            <p>Fake solutions are injected to catch lazy verifiers. Approving one triggers slashing.</p>
+            <p>The protocol injects fake solutions to detect lazy verifiers. Approving one can slash stake.</p>
           </article>
           <article class="card">
-            <h3>Schelling Voting</h3>
-            <p>Subjective tasks use commit/reveal voting with redundancy to find the honest consensus.</p>
+            <h3>Schelling point voting</h3>
+            <p>Subjective tasks use commit/reveal voting with redundancy to find honest consensus.</p>
           </article>
           <article class="card">
-            <h3>Token Economics</h3>
+            <h3>Stake + slashing</h3>
+            <p>Verifier stake is tracked at protocol level. Bad attestations can be penalized.</p>
+          </article>
+          <article class="card">
+            <h3>Tokenomics</h3>
             <p>Fee splits are enforced at protocol level: 95% solver, 4% verifier, 1% burn.</p>
+          </article>
+          <article class="card">
+            <h3>Burn-to-request</h3>
+            <p>A small burn can be required to submit jobs, helping defend against spam and Sybil attacks.</p>
+          </article>
+          <article class="card">
+            <h3>Libp2p networking</h3>
+            <p>Gossipsub + Kademlia peer discovery for a peer-to-peer job and block network.</p>
+          </article>
+          <article class="card">
+            <h3>Onboarding TUI</h3>
+            <p>Local wallet creation/loading and genesis mining via <span class="code">hardclaw</span>.</p>
           </article>
         </section>
 
-        <section id="how" class="split" data-animate>
+        <section id="intent" class="split" data-animate>
           <div>
-            <h2>How it works</h2>
+            <h2>Intent + threat model</h2>
             <p>
-              HardClaw has three roles: requesters publish jobs with bounties, solvers execute the work, and verifiers check solutions. Verified solutions are added to blocks and secured with a 66% consensus threshold.
+              HardClaw is for protocols where the scarce resource is trust in outputs: verifiers should be rewarded for checking useful work (agent
+              runs, computations, or datasets), not for burning electricity on arbitrary puzzles.
+            </p>
+            <p class="note">
+              Today this repo is a prototype. It focuses on primitives (job packets, solution candidates, verifier attestations, and token accounting)
+              more than full product workflows.
+            </p>
+          </div>
+          <div class="card glassy">
+            <h3>Threats we design for</h3>
+            <ul class="bullets">
+              <li><strong>Lazy verification:</strong> honey pots can catch verifiers who approve without checking.</li>
+              <li><strong>Subjective tasks:</strong> Schelling point voting uses redundancy + commit/reveal to reduce coordination attacks.</li>
+              <li><strong>Spam &amp; Sybil:</strong> burn-to-request can make job submission costly enough to deter flooding.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="blocks" class="split" data-animate>
+          <div>
+            <h2>How blocks are produced</h2>
+            <p>
+              Requesters publish job packets with bounties, solvers submit solution candidates, and verifiers independently check those outputs.
+              Verified solutions are included in blocks, which reach validity at a 66% consensus threshold.
             </p>
             <ul class="steps">
-              <li><span>01</span>Requester submits a job packet with a bounty and verification spec.</li>
-              <li><span>02</span>Solvers compute results and submit solution candidates.</li>
-              <li><span>03</span>Verifiers check solutions and produce blocks.</li>
+              <li><span>01</span>Requester submits a job packet (inputs + bounty + verification spec).</li>
+              <li><span>02</span>Solver submits a solution candidate.</li>
+              <li><span>03</span>Verifier checks the solution and attests; blocks include verified work.</li>
             </ul>
           </div>
           <div class="diagram">
@@ -119,81 +239,55 @@
           </div>
         </section>
 
-        <section id="onboard" class="onboard" data-animate>
-          <div class="section-head">
-            <h2>Onboard in minutes</h2>
-            <p>Choose your path: agentic user (requester / solver) or validator (verifier node).</p>
-          </div>
-          <div class="onboard-grid">
-            <article class="card glassy">
-              <h3>Agentic user</h3>
-              <p>Submit jobs and execute work through the MCP server or CLI.</p>
-              <ol>
-                <li>Install the binaries or use the MCP server.</li>
-                <li>Create a wallet with <span class="code">hardclaw</span>.</li>
-                <li>Submit jobs via MCP or <span class="code">hardclaw-cli</span>.</li>
-                <li>Execute tasks and submit solutions for bounties.</li>
-              </ol>
-            </article>
-            <article class="card glassy">
-              <h3>Validator</h3>
-              <p>Run a verifier node, stake tokens, and earn rewards by validating work.</p>
-              <ol>
-                <li>Install the binaries.</li>
-                <li>Create a wallet and acquire stake.</li>
-                <li>Run <span class="code">hardclaw-node --verifier</span>.</li>
-                <li>Connect to peers and earn verification rewards.</li>
-              </ol>
-            </article>
-          </div>
-        </section>
-
-        <section id="download" class="download" data-animate>
+        <section id="build" class="download" data-animate>
           <div>
-            <h2>Download</h2>
-            <p>Grab the latest binaries or build from source. The project ships three executables.</p>
+            <h2>Build + development</h2>
+            <p>HardClaw is a single Rust workspace. The MCP server lives in <span class="code">hardclaw-mcp</span>.</p>
             <div class="download-actions">
-              <a class="button primary" href="https://github.com/hardclaw/hardclaw/releases" target="_blank" rel="noreferrer">GitHub Releases</a>
-              <a class="button ghost" href="https://github.com/hardclaw/hardclaw" target="_blank" rel="noreferrer">View source</a>
+              <a class="button primary" href="https://github.com/hapticPaper/hardclaw/releases" target="_blank" rel="noreferrer">GitHub Releases</a>
+              <a class="button ghost" href="https://github.com/hapticPaper/hardclaw/tags" target="_blank" rel="noreferrer">Tags</a>
+              <a class="button ghost" href="https://github.com/hapticPaper/hardclaw" target="_blank" rel="noreferrer">View source</a>
             </div>
           </div>
           <div class="download-list">
             <div class="card">
-              <h4>hardclaw</h4>
-              <p>Onboarding TUI for wallet creation and management.</p>
+              <h4>Test</h4>
+              <pre><code>cargo test --all-features</code></pre>
             </div>
             <div class="card">
-              <h4>hardclaw-node</h4>
-              <p>Full node and verifier node (libp2p networking).</p>
+              <h4>Build</h4>
+              <pre><code>cargo build --release</code></pre>
             </div>
             <div class="card">
-              <h4>hardclaw-cli</h4>
-              <p>Interactive CLI for job submission and management.</p>
-            </div>
-            <div class="card">
-              <h4>hardclaw-mcp</h4>
-              <p>MCP server for agentic job submission and execution.</p>
+              <h4>MCP server</h4>
+              <pre><code>cd hardclaw-mcp
+npm ci
+npm run build</code></pre>
             </div>
           </div>
         </section>
 
-        <section class="cta" data-animate>
+        <section id="binaries" class="cta" data-animate>
           <div>
-            <h2>Run it locally</h2>
-            <p>Prefer building from source? HardClaw is a single Rust workspace.</p>
+            <h2>Binaries</h2>
+            <p>Three Rust executables, plus a Node-based MCP server.</p>
           </div>
           <div class="cta-box">
             <div>
-              <span>Install</span>
-              <strong>cargo install --path .</strong>
-            </div>
-            <div>
-              <span>Run</span>
+              <span>Onboarding TUI</span>
               <strong>hardclaw</strong>
             </div>
             <div>
-              <span>Verify</span>
-              <strong>hardclaw-node --verifier</strong>
+              <span>Node / verifier</span>
+              <strong>hardclaw-node</strong>
+            </div>
+            <div>
+              <span>CLI demo</span>
+              <strong>hardclaw-cli</strong>
+            </div>
+            <div>
+              <span>MCP server (npm)</span>
+              <strong>@hardclaw/mcp-server</strong>
             </div>
           </div>
         </section>
@@ -205,9 +299,9 @@
           <p>Proof-of-Verification for the Autonomous Agent Economy.</p>
         </div>
         <div class="footer-links">
-          <a href="https://github.com/hardclaw/hardclaw" target="_blank" rel="noreferrer">GitHub</a>
-          <a href="https://github.com/hardclaw/hardclaw/releases" target="_blank" rel="noreferrer">Releases</a>
-          <a href="#onboard">Onboard</a>
+          <a href="https://github.com/hapticPaper/hardclaw" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="https://www.npmjs.com/package/@hardclaw/mcp-server" target="_blank" rel="noreferrer">MCP server</a>
+          <a href="#quickstart">Quick start</a>
         </div>
       </footer>
     </div>
