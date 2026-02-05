@@ -33,12 +33,13 @@ enum AppState {
     WalletCreated {
         address: String,
         path: String,
+        seed_phrase: String,
     },
     LoadWallet,
     WalletLoaded {
         address: String,
     },
-    MineGenesis,
+    RunNode,
     GenesisMined {
         block_hash: String,
     },
@@ -83,7 +84,7 @@ impl App {
             vec![
                 "Load Wallet",
                 "Create New Wallet",
-                "Mine Genesis Block",
+                "Run Verifier Node",
                 "Help",
                 "Quit",
             ]
@@ -91,7 +92,7 @@ impl App {
             vec![
                 "Create Wallet",
                 "Load Wallet",
-                "Mine Genesis Block",
+                "Run Verifier Node",
                 "Help",
                 "Quit",
             ]
@@ -149,7 +150,7 @@ impl App {
             AppState::WalletLoaded { .. } => {
                 self.state = AppState::MainMenu;
             }
-            AppState::MineGenesis => match key {
+            AppState::RunNode => match key {
                 KeyCode::Enter | KeyCode::Char('y') => {
                     self.mine_genesis();
                 }
@@ -185,11 +186,11 @@ impl App {
             "Load Wallet" => {
                 self.state = AppState::LoadWallet;
             }
-            "Mine Genesis Block" => {
+            "Run Verifier Node" => {
                 if self.wallet.is_none() {
                     self.message = Some("Please create or load a wallet first".to_string());
                 } else {
-                    self.state = AppState::MineGenesis;
+                    self.state = AppState::RunNode;
                 }
             }
             "Help" => {
@@ -203,7 +204,15 @@ impl App {
     }
 
     fn create_wallet(&mut self) {
-        let mut wallet = Wallet::generate();
+        // Generate wallet with BIP39 mnemonic
+        let mnemonic = hardclaw::generate_mnemonic();
+        let seed_phrase = mnemonic.to_string();
+        let keypair = hardclaw::keypair_from_mnemonic(&mnemonic, "");
+
+        // Create wallet from the keypair
+        let secret_bytes = keypair.secret_key().to_bytes();
+        let mut wallet =
+            Wallet::from_secret_bytes(secret_bytes).expect("valid keypair from mnemonic");
         let address = wallet.address().to_string();
 
         match wallet.save_as_default() {
@@ -211,12 +220,16 @@ impl App {
                 let path = Wallet::default_path().display().to_string();
                 self.wallet = Some(wallet);
                 self.message = None;
-                self.state = AppState::WalletCreated { address, path };
+                self.state = AppState::WalletCreated {
+                    address,
+                    path,
+                    seed_phrase,
+                };
                 // Update menu to show "Load Wallet" as first option now
                 self.menu = MenuState::new(vec![
                     "Load Wallet",
                     "Create New Wallet",
-                    "Mine Genesis Block",
+                    "Run Verifier Node",
                     "Help",
                     "Quit",
                 ]);
@@ -274,14 +287,18 @@ impl App {
             AppState::Welcome => self.render_welcome(frame, chunks[1]),
             AppState::MainMenu => self.render_main_menu(frame, chunks[1]),
             AppState::CreateWallet => self.render_create_wallet(frame, chunks[1]),
-            AppState::WalletCreated { address, path } => {
-                self.render_wallet_created(frame, chunks[1], address, path);
+            AppState::WalletCreated {
+                address,
+                path,
+                seed_phrase,
+            } => {
+                self.render_wallet_created(frame, chunks[1], address, path, seed_phrase);
             }
             AppState::LoadWallet => self.render_load_wallet(frame, chunks[1]),
             AppState::WalletLoaded { address } => {
                 self.render_wallet_loaded(frame, chunks[1], address);
             }
-            AppState::MineGenesis => self.render_mine_genesis(frame, chunks[1]),
+            AppState::RunNode => self.render_run_node(frame, chunks[1]),
             AppState::GenesisMined { block_hash } => {
                 self.render_genesis_mined(frame, chunks[1], block_hash);
             }
@@ -321,7 +338,7 @@ impl App {
         let hint = match &self.state {
             AppState::Welcome => "Press any key to continue",
             AppState::MainMenu => "j/k: Navigate | Enter: Select | q: Quit",
-            AppState::CreateWallet | AppState::LoadWallet | AppState::MineGenesis => {
+            AppState::CreateWallet | AppState::LoadWallet | AppState::RunNode => {
                 "Enter/y: Confirm | Esc/n: Cancel"
             }
             AppState::WalletCreated { .. }
@@ -453,44 +470,76 @@ impl App {
         frame.render_widget(paragraph, centered_rect(60, 60, area));
     }
 
-    fn render_wallet_created(&self, frame: &mut Frame, area: Rect, address: &str, path: &str) {
-        let text = vec![
+    fn render_wallet_created(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        address: &str,
+        path: &str,
+        seed_phrase: &str,
+    ) {
+        let words: Vec<&str> = seed_phrase.split_whitespace().collect();
+        let mut text = vec![
             Line::from(""),
             Line::from(Span::styled(
-                "Wallet Created Successfully!",
+                "🔐 WALLET CREATED - SAVE YOUR SEED PHRASE! 🔐",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Write down these 24 words in order and store them securely.",
+                Style::default().fg(Color::Yellow),
+            )),
+            Line::from(Span::styled(
+                "This is the ONLY way to recover your wallet!",
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
-            Line::from("Your new wallet address:"),
+        ];
+
+        // Display seed phrase in 4 columns of 6 words
+        for row in 0..6 {
+            let mut line_spans = vec![];
+            for col in 0..4 {
+                let idx = col * 6 + row;
+                if idx < words.len() {
+                    line_spans.push(Span::styled(
+                        format!("{:2}. {:<11} ", idx + 1, words[idx]),
+                        Style::default().fg(Color::Cyan),
+                    ));
+                }
+            }
+            text.push(Line::from(line_spans));
+        }
+
+        text.extend(vec![
+            Line::from(""),
+            Line::from(Span::styled("Address:", Style::default().fg(Color::White))),
             Line::from(Span::styled(
                 address.to_string(),
-                Style::default().fg(Color::Yellow),
+                Style::default().fg(Color::Green),
             )),
             Line::from(""),
-            Line::from("Saved to:"),
             Line::from(Span::styled(
-                path.to_string(),
-                Style::default().fg(Color::Cyan),
+                format!("Wallet saved to: {}", path),
+                Style::default().fg(Color::DarkGray),
             )),
-            Line::from(""),
-            Line::from(""),
-            Line::from("You can now mine the genesis block to start the network!"),
             Line::from(""),
             Line::from(Span::styled(
                 "Press any key to continue...",
                 Style::default().fg(Color::DarkGray),
             )),
-        ];
+        ]);
 
         let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Green)),
+                .border_style(Style::default().fg(Color::Red)),
         );
 
-        frame.render_widget(paragraph, centered_rect(70, 60, area));
+        frame.render_widget(paragraph, centered_rect(85, 90, area));
     }
 
     fn render_load_wallet(&self, frame: &mut Frame, area: Rect) {
@@ -583,7 +632,7 @@ impl App {
         frame.render_widget(paragraph, centered_rect(60, 40, area));
     }
 
-    fn render_mine_genesis(&self, frame: &mut Frame, area: Rect) {
+    fn render_run_node(&self, frame: &mut Frame, area: Rect) {
         let wallet_addr = self
             .wallet
             .as_ref()
@@ -593,37 +642,42 @@ impl App {
         let text = vec![
             Line::from(""),
             Line::from(Span::styled(
-                "Mine Genesis Block",
+                "Run Verifier Node",
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
-            Line::from("This will create the genesis block for your HardClaw network."),
+            Line::from("This will start a verifier node on the HardClaw network."),
             Line::from(""),
-            Line::from("Block producer (you):"),
+            Line::from("Your node will:"),
             Line::from(Span::styled(
-                format!("  {}...", &wallet_addr[..32.min(wallet_addr.len())]),
+                "  • Verify solutions and earn rewards",
+                Style::default().fg(Color::Cyan),
+            )),
+            Line::from(Span::styled(
+                "  • Participate in consensus",
+                Style::default().fg(Color::Cyan),
+            )),
+            Line::from(Span::styled(
+                "  • Help secure the network",
                 Style::default().fg(Color::Cyan),
             )),
             Line::from(""),
-            Line::from("Genesis parameters:"),
+            Line::from("Node address:"),
             Line::from(Span::styled(
-                "  - Height: 0",
-                Style::default().fg(Color::DarkGray),
+                format!("  {}...", &wallet_addr[..32.min(wallet_addr.len())]),
+                Style::default().fg(Color::Yellow),
             )),
+            Line::from(""),
             Line::from(Span::styled(
-                "  - Parent: 0x0000...0000",
-                Style::default().fg(Color::DarkGray),
-            )),
-            Line::from(Span::styled(
-                "  - Consensus: Proof-of-Verification",
+                "Note: Use 'hardclaw-node --verifier' to run a full node",
                 Style::default().fg(Color::DarkGray),
             )),
             Line::from(""),
             Line::from(""),
             Line::from(Span::styled(
-                "Mine genesis block? (y/n)",
+                "Start node? (y/n)",
                 Style::default().fg(Color::Green),
             )),
         ];
@@ -634,7 +688,7 @@ impl App {
                 .border_style(Style::default().fg(Color::Cyan)),
         );
 
-        frame.render_widget(paragraph, centered_rect(65, 70, area));
+        frame.render_widget(paragraph, centered_rect(70, 75, area));
     }
 
     fn render_genesis_mined(&self, frame: &mut Frame, area: Rect, block_hash: &str) {
@@ -715,21 +769,21 @@ impl App {
             Line::from("   Your wallet is your identity on the network."),
             Line::from(""),
             Line::from(Span::styled(
-                "2. Mine Genesis Block",
+                "2. Run Verifier Node",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             )),
-            Line::from("   Create the first block to initialize the network."),
-            Line::from("   This makes you the first verifier."),
+            Line::from("   Start your node to verify solutions and earn rewards."),
+            Line::from("   Use 'hardclaw-node --verifier' from the command line."),
             Line::from(""),
             Line::from(Span::styled(
-                "3. Run Your Node",
+                "3. Participate in the Network",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             )),
-            Line::from("   Start verifying solutions and producing blocks."),
+            Line::from("   Submit jobs, verify solutions, and produce blocks."),
             Line::from("   Earn HCLAW rewards for honest verification."),
             Line::from(""),
             Line::from(Span::styled(

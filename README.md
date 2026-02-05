@@ -52,7 +52,7 @@ hardclaw-node --bootstrap /ip4/<IP>/tcp/9000/p2p/<PEER_ID>
 - **Tokenomics Module** - Minted/burned accounting and fee splits
 - **66% Consensus Threshold** - $2/3$ majority for block validity
 - **Libp2p Networking** - Gossipsub + Kademlia peer discovery
-- **Onboarding TUI** - Wallet creation/loading and genesis mining
+- **Onboarding TUI** - Wallet creation/loading with secure seed phrase displayhrase display
 
 ## Architecture
 

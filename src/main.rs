@@ -164,6 +164,8 @@ struct NodeConfig {
     port: u16,
     /// External address for NAT traversal
     external_addr: Option<String>,
+    /// Enable verbose network debug messages
+    network_debug: bool,
 }
 
 impl Default for NodeConfig {
@@ -174,6 +176,7 @@ impl Default for NodeConfig {
             verifier: VerifierConfig::default(),
             port: 9000,
             external_addr: None,
+            network_debug: false,
         }
     }
 }
@@ -250,11 +253,6 @@ impl HardClawNode {
         let (mut network, mut event_rx) = NetworkNode::new(network_config, peer_info)?;
 
         let peer_id = network.local_peer_id();
-        info!("P2P Peer ID: {}", peer_id);
-        info!(
-            "Connect to this node with: /ip4/<IP>/tcp/{}/p2p/{}",
-            self.config.port, peer_id
-        );
 
         // Start network
         network.start().await?;
@@ -263,6 +261,13 @@ impl HardClawNode {
             info!("Running as verifier");
         } else {
             info!("Running as full node");
+        }
+
+        if self.config.network_debug {
+            info!(
+                "Connect to this node: /ip4/<IP>/tcp/{}/p2p/{}",
+                self.config.port, peer_id
+            );
         }
 
         // Main event loop - drive the swarm and handle application events
@@ -289,60 +294,79 @@ impl HardClawNode {
 
     /// Handle network events
     async fn handle_network_event(&mut self, event: NetworkEvent) {
+        let debug = self.config.network_debug;
+
         match event {
             NetworkEvent::PeerConnected(peer) => {
                 self.peer_count += 1;
                 info!(
-                    "Network Status: Connected to {} peer(s) (+{})",
-                    self.peer_count, peer
+                    "Connected to {} peer{}",
+                    self.peer_count,
+                    if self.peer_count == 1 { "" } else { "s" }
                 );
+                if debug {
+                    info!("Peer connected: {}", peer);
+                }
             }
             NetworkEvent::PeerDisconnected(peer) => {
                 if self.peer_count > 0 {
                     self.peer_count -= 1;
                 }
                 info!(
-                    "Network Status: Connected to {} peer(s) (-{})",
-                    self.peer_count, peer
+                    "Connected to {} peer{}",
+                    self.peer_count,
+                    if self.peer_count == 1 { "" } else { "s" }
                 );
+                if debug {
+                    info!("Peer disconnected: {}", peer);
+                }
                 if self.peer_count == 0 {
-                    warn!(
-                        "Network Status: Disconnected from all peers. Waiting for connections..."
-                    );
+                    info!("Waiting for peer connections...");
                 }
             }
             NetworkEvent::JobReceived(job) => {
-                info!("Received job: {}", job.id);
+                if debug {
+                    info!("Received job: {}", job.id);
+                }
                 let mut mp = self.mempool.write().await;
                 if let Err(e) = mp.add_job(job) {
                     warn!("Failed to add job to mempool: {}", e);
                 }
             }
             NetworkEvent::SolutionReceived(solution) => {
-                info!("Received solution: {}", solution.id);
+                if debug {
+                    info!("Received solution: {}", solution.id);
+                }
             }
             NetworkEvent::BlockReceived(block) => {
-                info!(
-                    "Received block {} at height {}",
-                    block.hash, block.header.height
-                );
+                info!("Received block at height {}", block.header.height);
+                if debug {
+                    info!("Block hash: {}", block.hash);
+                }
                 let mut st = self.state.write().await;
                 if let Err(e) = st.apply_block(block) {
                     warn!("Failed to apply block: {}", e);
                 }
             }
             NetworkEvent::AttestationReceived(attestation) => {
-                info!("Received attestation for block {}", attestation.block_hash);
+                if debug {
+                    info!("Received attestation for block {}", attestation.block_hash);
+                }
             }
             NetworkEvent::PeersDiscovered(peers) => {
-                info!("Discovered {} peers via DHT", peers.len());
+                if debug {
+                    info!("Discovered {} peers via DHT", peers.len());
+                }
             }
             NetworkEvent::Started {
                 peer_id,
                 listen_addr,
             } => {
-                info!("Network started: {} @ {}", peer_id, listen_addr);
-                info!("Network Status: Waiting for peers to connect...");
+                info!("Network started");
+                info!("P2P Peer ID: {}", peer_id);
+                if debug {
+                    info!("Listen address: {}", listen_addr);
+                }
             }
             NetworkEvent::Error(e) => {
                 warn!("Network error: {}", e);
@@ -409,6 +433,7 @@ fn parse_args() -> CliCommand {
             "--show-seed" => return CliCommand::ShowSeed,
             "--recover" => return CliCommand::Recover,
             "--verifier" | "-v" => config.is_verifier = true,
+            "--network-debug" => config.network_debug = true,
             "--port" | "-p" => {
                 i += 1;
                 if i < args.len() {
@@ -457,6 +482,7 @@ fn print_help() {
     println!("    -p, --port <PORT>           Listen port (default: 9000)");
     println!("    -b, --bootstrap <ADDR>      Bootstrap peer address");
     println!("    --external-addr <ADDR>      External address for NAT traversal");
+    println!("    --network-debug             Enable verbose network logging");
     println!("    --no-official-bootstrap     Don't use official bootstrap nodes");
     println!("    -h, --help                  Print help");
 }
