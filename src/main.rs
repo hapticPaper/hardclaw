@@ -7,7 +7,7 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, warn, Level};
+use tracing::{info, warn};
 use tracing_subscriber::FmtSubscriber;
 
 use hardclaw::{
@@ -265,11 +265,14 @@ impl HardClawNode {
             info!("Running as full node");
         }
 
-        // Main event loop - handle network events and node logic together
+        // Main event loop - drive the swarm and handle application events
         let is_verifier = self.verifier.is_some();
         loop {
             tokio::select! {
-                // Handle network events
+                // Drive the libp2p swarm (processes dials, DNS, connections)
+                _ = network.poll() => {}
+
+                // Handle network events forwarded from the swarm
                 Some(event) = event_rx.recv() => {
                     self.handle_network_event(event).await;
                 }
@@ -562,9 +565,12 @@ async fn main() -> anyhow::Result<()> {
         _ => unreachable!(),
     };
 
-    // Initialize logging
+    // Initialize logging with EnvFilter to support RUST_LOG
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
+        .with_env_filter(env_filter)
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 

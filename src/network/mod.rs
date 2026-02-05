@@ -466,6 +466,13 @@ impl NetworkNode {
         }
     }
 
+    /// Process pending swarm events without blocking.
+    /// Call this from an outer `select!` loop to drive the network.
+    pub async fn poll(&mut self) {
+        let event = self.swarm.select_next_some().await;
+        self.handle_swarm_event(event).await;
+    }
+
     /// Handle a swarm event
     async fn handle_swarm_event(&mut self, event: SwarmEvent<HardClawBehaviourEvent>) {
         match event {
