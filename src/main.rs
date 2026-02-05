@@ -190,6 +190,8 @@ struct HardClawNode {
     mempool: Arc<RwLock<Mempool>>,
     /// Verifier (if running as verifier)
     verifier: Option<Verifier>,
+    /// Connected peers count
+    peer_count: usize,
 }
 
 impl HardClawNode {
@@ -207,6 +209,7 @@ impl HardClawNode {
             state: Arc::new(RwLock::new(ChainState::new())),
             mempool: Arc::new(RwLock::new(Mempool::new())),
             verifier,
+            peer_count: 0,
         }
     }
 
@@ -282,13 +285,20 @@ impl HardClawNode {
     }
 
     /// Handle network events
-    async fn handle_network_event(&self, event: NetworkEvent) {
+    async fn handle_network_event(&mut self, event: NetworkEvent) {
         match event {
             NetworkEvent::PeerConnected(peer) => {
-                info!("Peer connected: {}", peer);
+                self.peer_count += 1;
+                info!("Network Status: Connected to {} peer(s) (+{})", self.peer_count, peer);
             }
             NetworkEvent::PeerDisconnected(peer) => {
-                info!("Peer disconnected: {}", peer);
+                if self.peer_count > 0 {
+                    self.peer_count -= 1;
+                }
+                info!("Network Status: Connected to {} peer(s) (-{})", self.peer_count, peer);
+                if self.peer_count == 0 {
+                    warn!("Network Status: Disconnected from all peers. Waiting for connections...");
+                }
             }
             NetworkEvent::JobReceived(job) => {
                 info!("Received job: {}", job.id);
@@ -321,6 +331,7 @@ impl HardClawNode {
                 listen_addr,
             } => {
                 info!("Network started: {} @ {}", peer_id, listen_addr);
+                info!("Network Status: Waiting for peers to connect...");
             }
             NetworkEvent::Error(e) => {
                 warn!("Network error: {}", e);
