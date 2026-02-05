@@ -731,6 +731,9 @@ section:last-of-type {
 /* Split layout sections */
 .split {
   padding: 0;
+}
+
+.split-content {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 64px;
@@ -739,7 +742,7 @@ section:last-of-type {
   margin: 0 auto;
 }
 
-.split > div:first-child {
+.split-content > div:first-child {
   max-width: 580px;
 }
 
