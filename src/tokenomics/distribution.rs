@@ -131,8 +131,8 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Shares must sum to 100")]
     fn test_invalid_shares() {
-        FeeDistributor::new(50, 50, 50); // Sums to 150, not 100
+        let _ = FeeDistributor::new(50, 50, 50); // Sums to 150, not 100
     }
 }

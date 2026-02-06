@@ -12,7 +12,10 @@ pub use consensus::SafetyConsensusEngine;
 pub use incentives::ReviewerIncentives;
 
 use crate::crypto::PublicKey;
-use crate::types::review::*;
+use crate::types::review::{
+    ConsensusDecision, ReviewPhase, ReviewerReputation, SafetyReviewCommit, SafetyReviewRequest,
+    SafetyReviewSession, SafetyReviewVote, SafetyVerdict,
+};
 use std::collections::HashMap;
 
 /// Safety review manager
@@ -79,8 +82,7 @@ impl SafetyReviewManager {
                 let trust = self
                     .reputations
                     .get(pk)
-                    .map(|r| r.trust_score())
-                    .unwrap_or(0.5); // New reviewers start at 0.5
+                    .map_or(0.5, ReviewerReputation::trust_score); // New reviewers start at 0.5
                 (*pk, trust)
             })
             .collect();
@@ -194,10 +196,12 @@ impl SafetyReviewManager {
         }
 
         // Calculate consensus
-        let consensus = SafetyConsensus::from_votes(code_hash, session.votes.clone());
+        let consensus = self
+            .consensus
+            .calculate_consensus(code_hash, session.votes.clone());
 
         // Update reputations and calculate payouts
-        let payouts = self.incentives.calculate_payouts(
+        let _payouts = self.incentives.calculate_payouts(
             &consensus,
             session.request.gas_amount,
             &self.reputations,

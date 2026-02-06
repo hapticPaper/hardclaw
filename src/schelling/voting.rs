@@ -258,14 +258,14 @@ mod tests {
         let mut round = VotingRound::new(Hash::ZERO, 1000, 1000);
         let voter = Keypair::generate();
 
-        let vote1 =
+        let first_vote =
             VerificationVote::commit(Hash::ZERO, *voter.public_key(), VoteResult::Accept, 85);
-        let vote2 =
+        let second_vote =
             VerificationVote::commit(Hash::ZERO, *voter.public_key(), VoteResult::Reject, 30);
 
-        round.add_commitment(vote1).unwrap();
+        round.add_commitment(first_vote).unwrap();
         assert!(matches!(
-            round.add_commitment(vote2),
+            round.add_commitment(second_vote),
             Err(SchellingError::DuplicateVote)
         ));
     }

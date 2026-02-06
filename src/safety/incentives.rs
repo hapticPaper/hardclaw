@@ -1,7 +1,9 @@
 //! Economic incentives for safety reviewers.
 
 use crate::crypto::PublicKey;
-use crate::types::review::*;
+use crate::types::review::{
+    ConsensusDecision, ReviewerReputation, SafetyConsensus, SafetyReviewVote, SafetyVerdict,
+};
 use std::collections::HashMap;
 
 /// Reviewer incentive calculator
@@ -40,7 +42,6 @@ impl ReviewerIncentives {
         };
 
         // Calculate base amounts based on decision
-        let gas_penalty_mult = consensus.decision.gas_penalty_multiplier();
         let reviewer_payout_mult = consensus.decision.reviewer_payout_multiplier();
 
         // Total gas allocated to reviewers
@@ -65,8 +66,7 @@ impl ReviewerIncentives {
             // Apply reputation multiplier
             let reputation_mult = reputations
                 .get(&vote.reviewer)
-                .map(|r| r.effective_payout_multiplier())
-                .unwrap_or(1.0);
+                .map_or(1.0, ReviewerReputation::effective_payout_multiplier);
 
             let final_payout = (base_payout as f64 * reputation_mult) as u64;
 
@@ -262,7 +262,7 @@ mod tests {
                 verdict: SafetyVerdict::Safe,
                 confidence: 0.9,
                 reasoning: None,
-                reviewer: Keypair::generate().public_key().clone(),
+                reviewer: *Keypair::generate().public_key(),
                 nonce: [0; 32],
                 signature: crate::crypto::Signature::from_bytes([0; 64]),
             },
@@ -271,7 +271,7 @@ mod tests {
                 verdict: SafetyVerdict::Safe,
                 confidence: 0.8,
                 reasoning: None,
-                reviewer: Keypair::generate().public_key().clone(),
+                reviewer: *Keypair::generate().public_key(),
                 nonce: [1; 32],
                 signature: crate::crypto::Signature::from_bytes([0; 64]),
             },
@@ -280,7 +280,7 @@ mod tests {
                 verdict: SafetyVerdict::Safe,
                 confidence: 0.85,
                 reasoning: None,
-                reviewer: Keypair::generate().public_key().clone(),
+                reviewer: *Keypair::generate().public_key(),
                 nonce: [2; 32],
                 signature: crate::crypto::Signature::from_bytes([0; 64]),
             },
@@ -289,7 +289,7 @@ mod tests {
                 verdict: SafetyVerdict::Unsafe,
                 confidence: 0.6,
                 reasoning: None,
-                reviewer: Keypair::generate().public_key().clone(),
+                reviewer: *Keypair::generate().public_key(),
                 nonce: [3; 32],
                 signature: crate::crypto::Signature::from_bytes([0; 64]),
             },
@@ -315,7 +315,7 @@ mod tests {
                 verdict: SafetyVerdict::Unsafe,
                 confidence: 0.95,
                 reasoning: None,
-                reviewer: Keypair::generate().public_key().clone(),
+                reviewer: *Keypair::generate().public_key(),
                 nonce: [0; 32],
                 signature: crate::crypto::Signature::from_bytes([0; 64]),
             },
@@ -324,7 +324,7 @@ mod tests {
                 verdict: SafetyVerdict::Unsafe,
                 confidence: 0.9,
                 reasoning: None,
-                reviewer: Keypair::generate().public_key().clone(),
+                reviewer: *Keypair::generate().public_key(),
                 nonce: [1; 32],
                 signature: crate::crypto::Signature::from_bytes([0; 64]),
             },
@@ -333,7 +333,7 @@ mod tests {
                 verdict: SafetyVerdict::Unsafe,
                 confidence: 0.92,
                 reasoning: None,
-                reviewer: Keypair::generate().public_key().clone(),
+                reviewer: *Keypair::generate().public_key(),
                 nonce: [2; 32],
                 signature: crate::crypto::Signature::from_bytes([0; 64]),
             },
@@ -362,7 +362,7 @@ mod tests {
         let estimate = incentives.estimate_earnings(1000, 5, 1.0);
 
         // Should have multiple scenarios
-        assert!(estimate.scenarios.len() > 0);
+        assert!(!estimate.scenarios.is_empty());
         // Expected value should be positive
         assert!(estimate.expected_value > 0.0);
     }

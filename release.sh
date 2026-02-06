@@ -55,6 +55,8 @@ git add Cargo.toml hardclaw-mcp/package.json hardclaw-mcp/package-lock.json
 git commit -m "Release v$NEW_RUST / mcp-v$NEW_MCP"
 git tag "v$NEW_RUST"
 git tag "mcp-v$NEW_MCP"
-git push origin main --tags
+
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+git push origin "$BRANCH" --tags
 
 echo "✓ Released v$NEW_RUST / mcp-v$NEW_MCP"

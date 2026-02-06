@@ -275,9 +275,8 @@ mod tests {
         let honey_pot = generator.generate(&job, fake_solver.public_key());
 
         // The honey pot output should NOT match the expected hash
-        let expected_hash = match &job.verification {
-            VerificationSpec::HashMatch { expected_hash } => expected_hash,
-            _ => panic!("Expected HashMatch"),
+        let VerificationSpec::HashMatch { expected_hash } = &job.verification else {
+            panic!("Expected HashMatch");
         };
 
         assert_ne!(honey_pot.output_hash, *expected_hash);

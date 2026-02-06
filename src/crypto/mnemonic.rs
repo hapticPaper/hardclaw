@@ -84,8 +84,7 @@ mod tests {
     #[test]
     fn test_generate_mnemonic() {
         let mnemonic = generate_mnemonic();
-        let words: Vec<_> = mnemonic.words().collect();
-        assert_eq!(words.len(), 24);
+        assert_eq!(mnemonic.words().count(), 24);
     }
 
     #[test]

@@ -46,26 +46,21 @@ impl AIReviewer {
     ///
     /// This is a framework that validators can plug their own AI models into.
     /// The actual AI call would go to:
-    /// - OpenAI API (GPT-4)
+    /// - `OpenAI` API (GPT-4)
     /// - Anthropic API (Claude)
     /// - Local LLM (Llama, Mistral, etc.)
     /// - Custom security models
     ///
     /// The important thing is that consensus rewards accuracy, not which model is used.
-    pub async fn review_code(
-        &self,
-        code_hash: Hash,
-        code: &str,
-        language: &str,
-    ) -> Result<SafetyReviewVote, String> {
+    pub fn review_code(&self, code_hash: Hash, code: &str, language: &str) -> SafetyReviewVote {
         // Build prompt for AI model
         let prompt = self.build_security_prompt(code, language);
 
         // Call AI model (this is where validators plug in their preferred model)
-        let ai_response = self.call_ai_model(&prompt).await?;
+        let ai_response = self.call_ai_model(&prompt);
 
         // Parse AI response into verdict and confidence
-        let (verdict, confidence, reasoning) = self.parse_ai_response(&ai_response)?;
+        let (verdict, confidence, reasoning) = self.parse_ai_response(&ai_response);
 
         // Generate cryptographic nonce for commit-reveal
         let mut nonce = [0u8; 32];
@@ -85,13 +80,17 @@ impl AIReviewer {
         // Sign the vote
         vote.signature = self.keypair.sign(&bincode::serialize(&vote).unwrap());
 
-        Ok(vote)
+        vote
     }
 
     /// Build security analysis prompt for AI model
     fn build_security_prompt(&self, code: &str, language: &str) -> String {
         format!(
             r#"You are a security auditor reviewing {language} verification code for a decentralized compute network.
+
+    MODEL INFO:
+    - Model ID: {model_id}
+    - Temperature: {temperature}
 
 CODE TO REVIEW:
 ```{language}
@@ -131,7 +130,9 @@ RESPOND IN JSON FORMAT:
 }}
 
 Be conservative but not paranoid: Obvious exploits = unsafe. Legitimate code = safe. Unclear = uncertain.
-False positives create disputes and network congestion, but missing an exploit wastes validator time."#
+False positives create disputes and network congestion, but missing an exploit wastes validator time."#,
+            model_id = self.config.model_id,
+            temperature = self.config.temperature
         )
     }
 
@@ -166,7 +167,7 @@ False positives create disputes and network congestion, but missing an exploit w
     ///     Ok(response)
     /// }
     /// ```
-    async fn call_ai_model(&self, prompt: &str) -> Result<String, String> {
+    fn call_ai_model(&self, prompt: &str) -> String {
         // VALIDATORS IMPLEMENT THIS based on their AI provider
 
         // For demo/testing, use a simple heuristic-based analysis
@@ -177,7 +178,7 @@ False positives create disputes and network congestion, but missing an exploit w
     /// Heuristic-based fallback analysis (for demo/testing)
     ///
     /// Real validators should replace this with actual AI model calls.
-    fn heuristic_analysis(prompt: &str) -> Result<String, String> {
+    fn heuristic_analysis(prompt: &str) -> String {
         // Extract code from prompt
         let code = prompt
             .split("```")
@@ -187,13 +188,14 @@ False positives create disputes and network congestion, but missing an exploit w
 
         // Empty/whitespace-only code = safe (some tasks just return data, no verification)
         if code.trim().is_empty() {
-            return Ok(r#"{
+            return r#"{
   "verdict": "safe",
   "confidence": 1.0,
   "reasoning": "No verification code provided - task likely just returns data without verification.",
   "detected_issues": [],
   "severity": "low"
-}"#.to_string());
+}"#
+            .to_string();
         }
 
         // Detect obvious exploit patterns
@@ -271,20 +273,19 @@ False positives create disputes and network congestion, but missing an exploit w
         };
 
         // Format as JSON response
-        Ok(format!(
+        format!(
             r#"{{
   "verdict": "{verdict}",
   "confidence": {confidence},
   "reasoning": "{reasoning}",
-  "detected_issues": {:?},
+  "detected_issues": {detected_issues:?},
   "severity": "{severity}"
-}}"#,
-            detected_issues
-        ))
+}}"#
+        )
     }
 
     /// Parse AI response into verdict, confidence, and reasoning
-    fn parse_ai_response(&self, response: &str) -> Result<(SafetyVerdict, f64, String), String> {
+    fn parse_ai_response(&self, response: &str) -> (SafetyVerdict, f64, String) {
         // Parse JSON response from AI
         // In production, use serde_json for robust parsing
 
@@ -312,7 +313,7 @@ False positives create disputes and network congestion, but missing an exploit w
             .unwrap_or("AI analysis completed")
             .to_string();
 
-        Ok((verdict, confidence, reasoning))
+        (verdict, confidence, reasoning)
     }
 }
 
@@ -320,31 +321,28 @@ False positives create disputes and network congestion, but missing an exploit w
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_safe_code_review() {
+    #[test]
+    fn test_safe_code_review() {
         let keypair = Keypair::generate();
         let reviewer = AIReviewer::new(keypair, AIReviewerConfig::default());
 
-        let safe_code = r#"
+        let safe_code = r"
 def verify():
     # Simple hash comparison - terminates quickly
     import hashlib
     expected = hashlib.sha256(input_data).digest()
     return expected == output_data
-"#;
+    ";
 
-        let vote = reviewer
-            .review_code(Hash::from_bytes([0; 32]), safe_code, "python")
-            .await
-            .unwrap();
+        let vote = reviewer.review_code(Hash::from_bytes([0; 32]), safe_code, "python");
 
         // Should be safe - no infinite loops, will terminate
         assert_eq!(vote.verdict, SafetyVerdict::Safe);
         assert!(vote.confidence > 0.5);
     }
 
-    #[tokio::test]
-    async fn test_unsafe_code_review() {
+    #[test]
+    fn test_unsafe_code_review() {
         let keypair = Keypair::generate();
         let reviewer = AIReviewer::new(keypair, AIReviewerConfig::default());
 
@@ -358,31 +356,25 @@ def verify():
     return True
 "#;
 
-        let vote = reviewer
-            .review_code(Hash::from_bytes([0; 32]), unsafe_code, "python")
-            .await
-            .unwrap();
+        let vote = reviewer.review_code(Hash::from_bytes([0; 32]), unsafe_code, "python");
 
         // Should be unsafe due to credential theft + data exfiltration
         assert_eq!(vote.verdict, SafetyVerdict::Unsafe);
         assert!(vote.confidence > 0.8);
     }
 
-    #[tokio::test]
-    async fn test_empty_verification() {
+    #[test]
+    fn test_empty_verification() {
         let keypair = Keypair::generate();
         let reviewer = AIReviewer::new(keypair, AIReviewerConfig::default());
 
         // Empty code - some tasks just return data without verification
         let empty_code = "";
 
-        let vote = reviewer
-            .review_code(Hash::from_bytes([0; 32]), empty_code, "python")
-            .await
-            .unwrap();
+        let vote = reviewer.review_code(Hash::from_bytes([0; 32]), empty_code, "python");
 
         // Should be safe - no code means no threats
         assert_eq!(vote.verdict, SafetyVerdict::Safe);
-        assert_eq!(vote.confidence, 1.0);
+        assert!((vote.confidence - 1.0).abs() < 1e-9);
     }
 }

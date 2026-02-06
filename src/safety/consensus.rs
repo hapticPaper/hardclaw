@@ -1,6 +1,6 @@
 //! Consensus engine for safety reviews.
 
-use crate::types::review::*;
+use crate::types::review::{ConsensusDecision, SafetyConsensus, SafetyReviewVote, SafetyVerdict};
 
 /// Safety consensus engine
 pub struct SafetyConsensusEngine {
@@ -136,17 +136,23 @@ impl Default for SafetyConsensusEngine {
 pub enum AnomalyAlert {
     /// All reviewers voted the same way (potential collusion)
     UnanimousVote {
+        /// Hash of the reviewed code
         code_hash: crate::crypto::Hash,
+        /// Consensus verdict
         verdict: SafetyVerdict,
     },
     /// Too many reviewers with low confidence
     LowConfidence {
+        /// Hash of the reviewed code
         code_hash: crate::crypto::Hash,
+        /// Fraction of reviewers with low confidence
         low_confidence_fraction: f64,
     },
     /// Potential 51% attack detected
     PotentialAttack {
+        /// Hash of the reviewed code
         code_hash: crate::crypto::Hash,
+        /// Reviewers flagged as suspicious
         suspicious_reviewers: Vec<crate::crypto::PublicKey>,
     },
 }
@@ -169,7 +175,7 @@ mod tests {
                 verdict: SafetyVerdict::Safe,
                 confidence: 0.9,
                 reasoning: Some("Looks safe".to_string()),
-                reviewer: Keypair::generate().public_key().clone(),
+                reviewer: *Keypair::generate().public_key(),
                 nonce: [i; 32],
                 signature: crate::crypto::Signature::from_bytes([0; 64]),
             });
@@ -179,7 +185,7 @@ mod tests {
             verdict: SafetyVerdict::Unsafe,
             confidence: 0.7,
             reasoning: Some("Suspicious".to_string()),
-            reviewer: Keypair::generate().public_key().clone(),
+            reviewer: *Keypair::generate().public_key(),
             nonce: [4; 32],
             signature: crate::crypto::Signature::from_bytes([0; 64]),
         });
@@ -197,8 +203,9 @@ mod tests {
         let engine = SafetyConsensusEngine::new();
         let code_hash = crate::crypto::Hash::from_bytes([0; 32]);
 
-        let reviewer1 = Keypair::generate().public_key().clone();
-        let reviewer2 = Keypair::generate().public_key().clone();
+        let reviewer1 = *Keypair::generate().public_key();
+        let reviewer2 = *Keypair::generate().public_key();
+        let reviewer3 = *Keypair::generate().public_key();
 
         let votes = vec![
             SafetyReviewVote {
@@ -208,6 +215,15 @@ mod tests {
                 reasoning: None,
                 reviewer: reviewer1,
                 nonce: [0; 32],
+                signature: crate::crypto::Signature::from_bytes([0; 64]),
+            },
+            SafetyReviewVote {
+                code_hash,
+                verdict: SafetyVerdict::Safe, // Majority
+                confidence: 0.85,
+                reasoning: None,
+                reviewer: reviewer3,
+                nonce: [2; 32],
                 signature: crate::crypto::Signature::from_bytes([0; 64]),
             },
             SafetyReviewVote {
@@ -224,7 +240,8 @@ mod tests {
         let consensus = SafetyConsensus::from_votes(code_hash, votes);
         let rewards = engine.calculate_schelling_rewards(&consensus);
 
-        // Reviewer1 (majority) should get more than reviewer2 (minority)
-        assert!(rewards[0].1 > rewards[1].1);
+        // Majority voters should get more than minority voter
+        assert!(rewards[0].1 > rewards[2].1);
+        assert!(rewards[1].1 > rewards[2].1);
     }
 }

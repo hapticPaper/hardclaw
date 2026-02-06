@@ -32,7 +32,7 @@ pub struct SafetyReviewCommit {
     pub vote_hash: Hash,
     /// Reviewer's public key
     pub reviewer: PublicKey,
-    /// Signature over vote_hash
+    /// Signature over `vote_hash`
     pub signature: Signature,
     /// Timestamp of submission
     pub timestamp: i64,
@@ -315,7 +315,8 @@ impl ReviewerReputation {
             1.0 - (self.outlier_count as f64 / self.total_reviews as f64).min(0.5);
 
         // Weighted average
-        0.4 * agreement_ratio + 0.3 * outlier_penalty + 0.3 * self.accuracy_ema
+        let base = 0.4f64.mul_add(agreement_ratio, 0.3 * outlier_penalty);
+        0.3f64.mul_add(self.accuracy_ema, base)
     }
 }
 

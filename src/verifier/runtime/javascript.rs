@@ -45,7 +45,7 @@ impl JavaScriptRuntime {
             "[{}]",
             input
                 .iter()
-                .map(|b| b.to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(",")
         );
@@ -53,34 +53,33 @@ impl JavaScriptRuntime {
             "[{}]",
             output
                 .iter()
-                .map(|b| b.to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(",")
         );
 
         let setup_code = format!(
-            r#"
-            globalThis.inputData = new Uint8Array({});
-            globalThis.outputData = new Uint8Array({});
+            r"
+            globalThis.inputData = new Uint8Array({input_array});
+            globalThis.outputData = new Uint8Array({output_array});
             
             // Disable dangerous globals
             delete globalThis.Deno;
-            "#,
-            input_array, output_array
+            "
         );
 
         // Execute setup code
         runtime
             .execute_script("<setup>", setup_code.into())
-            .map_err(|e| RuntimeError::ExecutionFailed(format!("Setup failed: {}", e)))?;
+            .map_err(|e| RuntimeError::ExecutionFailed(format!("Setup failed: {e}")))?;
 
         // Execute user code
         runtime
             .execute_script("<user_code>", code.to_string().into())
-            .map_err(|e| RuntimeError::ExecutionFailed(format!("Code execution failed: {}", e)))?;
+            .map_err(|e| RuntimeError::ExecutionFailed(format!("Code execution failed: {e}")))?;
 
         // Call the verify function
-        let verify_call = r#"
+        let verify_call = r"
             (function() {
                 if (typeof verify !== 'function') {
                     throw new Error('verify function not found');
@@ -91,11 +90,11 @@ impl JavaScriptRuntime {
                 }
                 return result;
             })()
-        "#;
+        ";
 
         let result_value = runtime
             .execute_script("<verify_call>", verify_call.to_string().into())
-            .map_err(|e| RuntimeError::ExecutionFailed(format!("Verification failed: {}", e)))?;
+            .map_err(|e| RuntimeError::ExecutionFailed(format!("Verification failed: {e}")))?;
 
         // Extract the boolean result using the runtime scope
         let verified = {
@@ -103,6 +102,8 @@ impl JavaScriptRuntime {
             let local = deno_core::v8::Local::new(scope, &result_value);
             local.boolean_value(scope)
         };
+
+        drop(runtime);
 
         // Check timeout
         let duration = start.elapsed();
@@ -153,7 +154,7 @@ mod tests {
     fn test_simple_verification() {
         let runtime = JavaScriptRuntime::new();
 
-        let code = r#"
+        let code = r"
 function verify() {
     // Check if input equals output
     if (inputData.length !== outputData.length) return false;
@@ -162,7 +163,7 @@ function verify() {
     }
     return true;
 }
-"#;
+";
 
         let input = b"hello";
         let output = b"hello";
@@ -176,14 +177,14 @@ function verify() {
     fn test_network_access_blocked() {
         let runtime = JavaScriptRuntime::new();
 
-        let code = r#"
+        let code = r"
 function verify() {
     if (typeof Deno !== 'undefined') {
         throw new Error('Deno should not be available');
     }
     return true;
 }
-"#;
+";
 
         let result = runtime.execute(code, b"", b"");
         assert!(result.is_ok());

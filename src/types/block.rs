@@ -258,7 +258,6 @@ pub enum BlockError {
 mod tests {
     use super::*;
     use crate::crypto::Keypair;
-    use crate::types::verification::VoteResult;
 
     #[test]
     fn test_genesis_block() {

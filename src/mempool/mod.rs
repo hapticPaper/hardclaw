@@ -310,8 +310,8 @@ mod tests {
         let low_bounty = create_test_job(10);
         let high_bounty = create_test_job(100);
 
-        mempool.add_job(low_bounty.clone()).unwrap();
-        mempool.add_job(high_bounty.clone()).unwrap();
+        mempool.add_job(low_bounty).unwrap();
+        mempool.add_job(high_bounty).unwrap();
 
         // High bounty should come first
         let popped = mempool.pop_job().unwrap();

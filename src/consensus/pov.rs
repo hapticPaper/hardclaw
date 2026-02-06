@@ -181,7 +181,7 @@ impl ProofOfVerification {
         let runtime = PythonRuntime::new();
         match runtime.execute(code, input, output) {
             Ok(result) => (result, None),
-            Err(e) => (false, Some(format!("Python execution failed: {}", e))),
+            Err(e) => (false, Some(format!("Python execution failed: {e}"))),
         }
     }
 
@@ -208,7 +208,7 @@ impl ProofOfVerification {
         let runtime = JavaScriptRuntime::new();
         match runtime.execute(code, input, output) {
             Ok(result) => (result, None),
-            Err(e) => (false, Some(format!("JavaScript execution failed: {}", e))),
+            Err(e) => (false, Some(format!("JavaScript execution failed: {e}"))),
         }
     }
 

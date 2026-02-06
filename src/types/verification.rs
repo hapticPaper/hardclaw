@@ -366,6 +366,6 @@ mod tests {
         assert_eq!(results.accept_votes, 3);
         assert_eq!(results.reject_votes, 2);
         assert_eq!(results.majority, Some(VoteResult::Accept));
-        assert_eq!(results.accept_percentage(), 60.0);
+        assert!((results.accept_percentage() - 60.0).abs() < 1e-9);
     }
 }

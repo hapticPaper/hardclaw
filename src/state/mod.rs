@@ -338,7 +338,7 @@ mod tests {
 
         // Apply genesis block
         let genesis = Block::genesis(*kp.public_key());
-        state.apply_block(genesis.clone()).unwrap();
+        state.apply_block(genesis).unwrap();
 
         assert_eq!(state.height(), 1);
         assert!(state.tip().is_some());
