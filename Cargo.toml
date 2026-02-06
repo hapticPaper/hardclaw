@@ -87,7 +87,7 @@ section = "utils"
 priority = "optional"
 assets = [
 	["packaging/linux/hardclaw.desktop", "usr/share/applications/hardclaw.desktop", "644"],
-	["docs/assets/apple-touch-icon.png", "usr/share/icons/hicolor/256x256/apps/hardclaw.png", "644"],
+	["docs/assets/claw-256.png", "usr/share/icons/hicolor/256x256/apps/hardclaw.png", "644"],
 	["docs/assets/favicon-32.png", "usr/share/icons/hicolor/32x32/apps/hardclaw.png", "644"],
 	["docs/assets/favicon-16.png", "usr/share/icons/hicolor/16x16/apps/hardclaw.png", "644"],
 ]
@@ -95,7 +95,7 @@ assets = [
 [package.metadata.generate-rpm]
 assets = [
 	{ source = "packaging/linux/hardclaw.desktop", dest = "/usr/share/applications/hardclaw.desktop", mode = "644" },
-	{ source = "docs/assets/apple-touch-icon.png", dest = "/usr/share/icons/hicolor/256x256/apps/hardclaw.png", mode = "644" },
+	{ source = "docs/assets/claw-256.png", dest = "/usr/share/icons/hicolor/256x256/apps/hardclaw.png", mode = "644" },
 	{ source = "docs/assets/favicon-32.png", dest = "/usr/share/icons/hicolor/32x32/apps/hardclaw.png", mode = "644" },
 	{ source = "docs/assets/favicon-16.png", dest = "/usr/share/icons/hicolor/16x16/apps/hardclaw.png", mode = "644" },
 ]
