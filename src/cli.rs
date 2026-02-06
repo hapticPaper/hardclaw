@@ -9,7 +9,7 @@ use hardclaw::{
 };
 use sha2::{Digest, Sha256};
 
-fn main() {
+pub fn run() {
     println!("╔════════════════════════════════════════════╗");
     println!("║       HardClaw CLI v{}             ║", hardclaw::VERSION);
     println!("║   Proof-of-Verification Protocol          ║");

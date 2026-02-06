@@ -101,22 +101,15 @@ assets = [
 ]
 
 [[bin]]
-name = "hardclaw-node"
-path = "src/main.rs"
-
-[[bin]]
-name = "hardclaw-cli"
-path = "src/cli.rs"
-
-[[bin]]
 name = "hardclaw"
-path = "src/onboarding.rs"
+path = "src/main.rs"
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
+strip = true
 
 [profile.dev]
 opt-level = 0

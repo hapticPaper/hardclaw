@@ -1000,7 +1000,7 @@ impl App {
             Line::from("To start your verifier node, run:"),
             Line::from(""),
             Line::from(Span::styled(
-                "  hardclaw-node --verifier",
+                "  hardclaw node --verifier",
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
@@ -1067,7 +1067,7 @@ impl App {
                     .add_modifier(Modifier::BOLD),
             )),
             Line::from("   Start your node to verify solutions and earn rewards."),
-            Line::from("   Use 'hardclaw-node --verifier' from the command line."),
+            Line::from("   Use 'hardclaw node --verifier' from the command line."),
             Line::from(""),
             Line::from(Span::styled(
                 "3. Participate in the Network",
@@ -1372,7 +1372,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
-fn main() -> io::Result<()> {
+pub fn run() -> io::Result<()> {
     // Setup terminal
     terminal::enable_raw_mode()?;
     let mut stdout = stdout();

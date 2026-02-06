@@ -177,7 +177,7 @@ jobs:
         run: |
           cd artifacts
           tar -xzf hardclaw-linux-x86_64.tar.gz
-          chmod +x hardclaw-linux-x86_64/bin/hardclaw-node
+          chmod +x hardclaw-linux-x86_64/bin/hardclaw
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
@@ -195,8 +195,8 @@ jobs:
             VM="${node%%:*}"
             ZONE="${node##*:}"
             echo "=== Deploying to $VM ==="
-            gcloud compute scp artifacts/hardclaw-linux-x86_64/bin/hardclaw-node $VM:/tmp/hardclaw-node --zone=$ZONE
-            gcloud compute ssh $VM --zone=$ZONE --command="sudo mv /tmp/hardclaw-node /usr/local/bin/ && sudo systemctl restart hardclaw"
+            gcloud compute scp artifacts/hardclaw-linux-x86_64/bin/hardclaw $VM:/tmp/hardclaw --zone=$ZONE
+            gcloud compute ssh $VM --zone=$ZONE --command="sudo mv /tmp/hardclaw /usr/local/bin/ && sudo ln -sf hardclaw /usr/local/bin/hardclaw-node && sudo systemctl restart hardclaw"
             echo "Deployed to $VM"
           done
 

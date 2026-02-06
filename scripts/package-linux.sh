@@ -19,10 +19,11 @@ rm -rf "$DIST_DIR"
 mkdir -p "$STAGING_DIR/bin" "$STAGING_DIR/share/applications" "$STAGING_DIR/share/icons/hicolor/256x256/apps"
 
 cp "$BUILD_DIR/hardclaw" "$STAGING_DIR/bin/"
-cp "$BUILD_DIR/hardclaw-cli" "$STAGING_DIR/bin/"
-cp "$BUILD_DIR/hardclaw-node" "$STAGING_DIR/bin/"
+chmod +x "$STAGING_DIR/bin/hardclaw"
 
-chmod +x "$STAGING_DIR/bin/hardclaw" "$STAGING_DIR/bin/hardclaw-cli" "$STAGING_DIR/bin/hardclaw-node"
+# Backward-compat symlinks for old binary names
+ln -s hardclaw "$STAGING_DIR/bin/hardclaw-node"
+ln -s hardclaw "$STAGING_DIR/bin/hardclaw-cli"
 
 if [[ -f "$ICON_SRC" ]]; then
   cp "$ICON_SRC" "$STAGING_DIR/share/icons/hicolor/256x256/apps/hardclaw.png"

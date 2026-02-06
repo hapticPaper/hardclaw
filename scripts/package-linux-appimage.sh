@@ -24,10 +24,11 @@ mkdir -p "$APPDIR/usr/bin" \
   "$APPDIR/usr/share/icons/hicolor/16x16/apps"
 
 cp "$BUILD_DIR/hardclaw" "$APPDIR/usr/bin/"
-cp "$BUILD_DIR/hardclaw-cli" "$APPDIR/usr/bin/"
-cp "$BUILD_DIR/hardclaw-node" "$APPDIR/usr/bin/"
+chmod +x "$APPDIR/usr/bin/hardclaw"
 
-chmod +x "$APPDIR/usr/bin/hardclaw" "$APPDIR/usr/bin/hardclaw-cli" "$APPDIR/usr/bin/hardclaw-node"
+# Backward-compat symlinks for old binary names
+ln -s hardclaw "$APPDIR/usr/bin/hardclaw-node"
+ln -s hardclaw "$APPDIR/usr/bin/hardclaw-cli"
 
 if [[ -f "$DESKTOP_SRC" ]]; then
   cp "$DESKTOP_SRC" "$APPDIR/usr/share/applications/hardclaw.desktop"

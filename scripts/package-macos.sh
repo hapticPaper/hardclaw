@@ -22,12 +22,30 @@ ICON_32="$ROOT_DIR/docs/assets/favicon-32.png"
 rm -rf "$DIST_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
-cp "$BUILD_DIR/hardclaw" "$MACOS_DIR/hardclaw"
-cp "$BUILD_DIR/hardclaw-cli" "$MACOS_DIR/hardclaw-cli"
-cp "$BUILD_DIR/hardclaw-node" "$MACOS_DIR/hardclaw-node"
+# Copy single binary
+cp "$BUILD_DIR/hardclaw" "$MACOS_DIR/hardclaw-bin"
+chmod +x "$MACOS_DIR/hardclaw-bin"
 
-chmod +x "$MACOS_DIR/hardclaw" "$MACOS_DIR/hardclaw-cli" "$MACOS_DIR/hardclaw-node"
+# Create launcher script that opens Terminal with the TUI
+cat > "$MACOS_DIR/hardclaw" <<'LAUNCHER'
+#!/bin/bash
+DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -t 0 ] && [ -t 1 ]; then
+  # Already in a terminal — run directly
+  exec "$DIR/hardclaw-bin" "$@"
+else
+  # Launched from Finder — open Terminal and run the TUI
+  osascript <<EOF
+tell application "Terminal"
+  activate
+  do script "'$DIR/hardclaw-bin'"
+end tell
+EOF
+fi
+LAUNCHER
+chmod +x "$MACOS_DIR/hardclaw"
 
+# Build .icns icon
 if [[ -f "$ICON_LARGE" ]]; then
   ICONSET_DIR="$DIST_DIR/AppIcon.iconset"
   ICNS_PATH="$RESOURCES_DIR/AppIcon.icns"
@@ -83,10 +101,14 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
 </plist>
 EOF
 
+# Ad-hoc codesign to prevent "damaged" error on macOS
+codesign --force --deep -s - "$APP_DIR"
+
+# Build DMG with .app + raw binary
 DMG_ROOT="$DIST_DIR/dmg-root"
-mkdir -p "$DMG_ROOT/cli"
+mkdir -p "$DMG_ROOT"
 cp -R "$APP_DIR" "$DMG_ROOT/"
-cp "$BUILD_DIR/hardclaw-cli" "$DMG_ROOT/cli/"
-cp "$BUILD_DIR/hardclaw-node" "$DMG_ROOT/cli/"
+cp "$BUILD_DIR/hardclaw" "$DMG_ROOT/hardclaw"
+chmod +x "$DMG_ROOT/hardclaw"
 
 hdiutil create -volname "HardClaw" -srcfolder "$DMG_ROOT" -ov -format UDZO "$DIST_DIR/$ARTIFACT_NAME.dmg"
