@@ -25,7 +25,7 @@ jobs:
             os: ubuntu-latest
             artifact_name: hardclaw-linux-x86_64
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04-arm64
             artifact_name: hardclaw-linux-aarch64
           
           # macOS
@@ -53,7 +53,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Install cross-compilation tools (Linux aarch64)
-        if: runner.os == 'Linux' && contains(matrix.target, 'aarch64')
+        if: runner.os == 'Linux' && contains(matrix.target, 'aarch64') && runner.arch == 'X64'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
@@ -76,22 +76,66 @@ jobs:
           path: target
           key: ${{ runner.os }}-${{ matrix.target }}-target-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Build release binaries
+      - name: Build release binaries (Linux aarch64 on x64)
+        if: ${{ runner.os == 'Linux' && contains(matrix.target, 'aarch64') && runner.arch == 'X64' }}
         run: cargo build --release --target ${{ matrix.target }}
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 
-      - name: Package binaries (Unix)
-        if: runner.os != 'Windows'
+      - name: Build release binaries
+        if: ${{ !(runner.os == 'Linux' && contains(matrix.target, 'aarch64') && runner.arch == 'X64') }}
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package binaries (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          chmod +x scripts/package-macos.sh
+          ./scripts/package-macos.sh ${{ matrix.target }} ${{ matrix.artifact_name }} ${{ github.ref_name }}
+
+      - name: Package binaries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x scripts/package-linux.sh
+          ./scripts/package-linux.sh ${{ matrix.target }} ${{ matrix.artifact_name }} ${{ github.ref_name }}
+
+      - name: Package Linux AppImage (x86_64)
+        if: runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
           mkdir -p dist
-          cd target/${{ matrix.target }}/release
-          
-          # Copy binaries
-          cp hardclaw hardclaw-node hardclaw-cli ../../../dist/ || true
-          
-          cd ../../../dist
-          tar -czf ${{ matrix.artifact_name }}.tar.gz hardclaw* || tar -czf ${{ matrix.artifact_name }}.tar.gz *
+          curl -L -o dist/linuxdeploy.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -L -o dist/appimagetool.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          mv dist/appimagetool.AppImage dist/appimagetool
+          chmod +x dist/linuxdeploy.AppImage dist/appimagetool
+          export PATH="$PWD/dist:$PATH"
+          chmod +x scripts/package-linux-appimage.sh
+          ./scripts/package-linux-appimage.sh ${{ matrix.target }} ${{ matrix.artifact_name }}
+
+      - name: Package Linux AppImage (ARM64)
+        if: runner.os == 'Linux' && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          mkdir -p dist
+          curl -L -o dist/linuxdeploy.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-aarch64.AppImage
+          curl -L -o dist/appimagetool.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
+          mv dist/appimagetool.AppImage dist/appimagetool
+          chmod +x dist/linuxdeploy.AppImage dist/appimagetool
+          export PATH="$PWD/dist:$PATH"
+          chmod +x scripts/package-linux-appimage.sh
+          ./scripts/package-linux-appimage.sh ${{ matrix.target }} ${{ matrix.artifact_name }}
+
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: |
+          cargo install cargo-deb --locked
+          cargo install cargo-generate-rpm --locked
+
+      - name: Package Linux deb and rpm
+        if: runner.os == 'Linux'
+        run: |
+          cargo deb --no-build --target ${{ matrix.target }}
+          cargo generate-rpm --target ${{ matrix.target }}
+          mkdir -p dist
+          cp target/debian/*.deb dist/
+          cp target/generate-rpm/*.rpm dist/
           
       - name: Package binaries (Windows)
         if: runner.os == 'Windows'
@@ -100,12 +144,23 @@ jobs:
           Copy-Item target/${{ matrix.target }}/release/*.exe dist/
           Compress-Archive -Path dist/* -DestinationPath dist/${{ matrix.artifact_name }}.zip
 
-      - name: Upload artifact (Unix)
-        if: runner.os != 'Windows'
+      - name: Upload artifact (macOS)
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: dist/${{ matrix.artifact_name }}.tar.gz
+          path: dist/${{ matrix.artifact_name }}.dmg
+
+      - name: Upload artifact (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            dist/${{ matrix.artifact_name }}.tar.gz
+            dist/*.deb
+            dist/*.rpm
+            dist/*.AppImage
 
       - name: Upload artifact (Windows)
         if: runner.os == 'Windows'
@@ -131,7 +186,7 @@ jobs:
         run: |
           cd artifacts
           tar -xzf hardclaw-linux-x86_64.tar.gz
-          chmod +x hardclaw-node
+          chmod +x hardclaw-linux-x86_64/bin/hardclaw-node
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
@@ -149,7 +204,7 @@ jobs:
             VM="${node%%:*}"
             ZONE="${node##*:}"
             echo "=== Deploying to $VM ==="
-            gcloud compute scp artifacts/hardclaw-node $VM:/tmp/hardclaw-node --zone=$ZONE
+            gcloud compute scp artifacts/hardclaw-linux-x86_64/bin/hardclaw-node $VM:/tmp/hardclaw-node --zone=$ZONE
             gcloud compute ssh $VM --zone=$ZONE --command="sudo mv /tmp/hardclaw-node /usr/local/bin/ && sudo systemctl restart hardclaw"
             echo "Deployed to $VM"
           done
@@ -182,10 +237,14 @@ jobs:
           **Linux**
           - x86_64: `hardclaw-linux-x86_64.tar.gz`
           - ARM64: `hardclaw-linux-aarch64.tar.gz`
+          - AppImage (x86_64): `hardclaw-linux-x86_64.AppImage`
+          - AppImage (ARM64): `hardclaw-linux-aarch64.AppImage`
+          - Debian/Ubuntu: `.deb` (x86_64 + ARM64)
+          - Fedora/RHEL: `.rpm` (x86_64 + ARM64)
           
           **macOS**
-          - Intel: `hardclaw-macos-x86_64.tar.gz`
-          - Apple Silicon: `hardclaw-macos-aarch64.tar.gz`
+          - Intel: `hardclaw-macos-x86_64.dmg`
+          - Apple Silicon: `hardclaw-macos-aarch64.dmg`
           
           **Windows**
           - x86_64: `hardclaw-windows-x86_64.zip` (ARM64 users: use this via x64 emulation)
@@ -204,14 +263,15 @@ jobs:
           
           ### Installation
           
-          1. Download the appropriate binary archive
-          2. Extract: `tar -xzf hardclaw-*.tar.gz` (or unzip on Windows)
-          3. Move binaries to your PATH
-          4. Run `hardclaw` to start onboarding
+          1. Download the appropriate package
+          2. macOS: open the `.dmg` and drag `HardClaw.app` to Applications
+          3. Linux: install `.deb`/`.rpm`, or extract the `.tar.gz` and copy `bin/` to your PATH
+          4. Windows: unzip and place binaries on your PATH
+          5. Run `hardclaw` to start onboarding
           
           ### What's Included
           
-          Each binary archive contains:
+          Each package contains:
           - `hardclaw` - Onboarding TUI
           - `hardclaw-node` - Full node / verifier
           - `hardclaw-cli` - CLI interface
@@ -225,6 +285,10 @@ jobs:
             artifacts/**/*.tar.gz
             artifacts/**/*.zip
             artifacts/**/*.tgz
+            artifacts/**/*.dmg
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/**/*.AppImage
           draft: false
           prerelease: false
         env:

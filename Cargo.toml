@@ -8,6 +8,7 @@ license = "MIT"
 repository = "https://github.com/hardclaw/hardclaw"
 keywords = ["blockchain", "proof-of-verification", "agents", "consensus"]
 categories = ["cryptography", "network-programming"]
+build = "build.rs"
 
 [dependencies]
 # Cryptography - using audited, production-grade crates
@@ -76,6 +77,28 @@ embedded-python = ["pyo3"]
 criterion = "0.5"
 proptest = "1.4"
 tokio-test = "0.4"
+
+[build-dependencies]
+winres = "0.1"
+
+[package.metadata.deb]
+maintainer = "HardClaw Collective"
+section = "utils"
+priority = "optional"
+assets = [
+	["packaging/linux/hardclaw.desktop", "usr/share/applications/hardclaw.desktop", "644"],
+	["docs/assets/apple-touch-icon.png", "usr/share/icons/hicolor/256x256/apps/hardclaw.png", "644"],
+	["docs/assets/favicon-32.png", "usr/share/icons/hicolor/32x32/apps/hardclaw.png", "644"],
+	["docs/assets/favicon-16.png", "usr/share/icons/hicolor/16x16/apps/hardclaw.png", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+	{ source = "packaging/linux/hardclaw.desktop", dest = "/usr/share/applications/hardclaw.desktop", mode = "644" },
+	{ source = "docs/assets/apple-touch-icon.png", dest = "/usr/share/icons/hicolor/256x256/apps/hardclaw.png", mode = "644" },
+	{ source = "docs/assets/favicon-32.png", dest = "/usr/share/icons/hicolor/32x32/apps/hardclaw.png", mode = "644" },
+	{ source = "docs/assets/favicon-16.png", dest = "/usr/share/icons/hicolor/16x16/apps/hardclaw.png", mode = "644" },
+]
 
 [[bin]]
 name = "hardclaw-node"

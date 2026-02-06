@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=HardClaw
+Comment=HardClaw Onboarding and Node Tools
+Exec=hardclaw
+Icon=hardclaw
+Terminal=true
+Type=Application
+Categories=Network;Utility;
