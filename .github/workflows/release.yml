@@ -160,7 +160,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: dist/${{ matrix.artifact_name }}.zip
+          path: |
+            dist/${{ matrix.artifact_name }}.zip
+            dist/hardclaw.exe
 
   deploy-bootstrap:
     name: Deploy to Bootstrap Nodes
@@ -179,7 +181,7 @@ jobs:
         run: |
           cd artifacts
           tar -xzf hardclaw-linux-x86_64.tar.gz
-          chmod +x hardclaw-linux-x86_64/bin/hardclaw
+          chmod +x hardclaw
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
@@ -197,7 +199,7 @@ jobs:
             VM="${node%%:*}"
             ZONE="${node##*:}"
             echo "=== Deploying to $VM ==="
-            gcloud compute scp artifacts/hardclaw-linux-x86_64/bin/hardclaw $VM:/tmp/hardclaw --zone=$ZONE
+            gcloud compute scp artifacts/hardclaw $VM:/tmp/hardclaw --zone=$ZONE
             gcloud compute ssh $VM --zone=$ZONE --command="sudo mv /tmp/hardclaw /usr/local/bin/ && sudo ln -sf hardclaw /usr/local/bin/hardclaw-node && sudo systemctl restart hardclaw"
             echo "Deployed to $VM"
           done
@@ -234,7 +236,7 @@ jobs:
           | Linux ARM64 | `hardclaw-linux-aarch64.tar.gz` |
           | macOS Intel | `hardclaw-macos-x86_64.tar.gz` |
           | macOS Apple Silicon | `hardclaw-macos-aarch64.tar.gz` |
-          | Windows x86_64 | `hardclaw-windows-x86_64.zip` |
+          | Windows x86_64 | `hardclaw.exe` / `hardclaw-windows-x86_64.zip` |
 
           **Application Packages** (with icons, desktop integration, etc.)
           | Platform | Download |
@@ -272,6 +274,7 @@ jobs:
           files: |
             artifacts/**/*.tar.gz
             artifacts/**/*.zip
+            artifacts/**/*.exe
             artifacts/**/*.tgz
             artifacts/**/*.dmg
             artifacts/**/*.deb
