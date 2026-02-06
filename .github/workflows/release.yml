@@ -135,7 +135,7 @@ jobs:
           cargo generate-rpm --target ${{ matrix.target }}
           mkdir -p dist
           cp target/debian/*.deb dist/
-          cp target/generate-rpm/*.rpm dist/
+          cp target/${{ matrix.target }}/generate-rpm/*.rpm dist/
           
       - name: Package binaries (Windows)
         if: runner.os == 'Windows'
