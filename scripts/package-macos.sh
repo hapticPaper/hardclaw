@@ -104,11 +104,11 @@ EOF
 # Ad-hoc codesign to prevent "damaged" error on macOS
 codesign --force --deep -s - "$APP_DIR"
 
-# Build DMG with .app + raw binary
+# Build DMG (application package)
 DMG_ROOT="$DIST_DIR/dmg-root"
 mkdir -p "$DMG_ROOT"
 cp -R "$APP_DIR" "$DMG_ROOT/"
-cp "$BUILD_DIR/hardclaw" "$DMG_ROOT/hardclaw"
-chmod +x "$DMG_ROOT/hardclaw"
-
 hdiutil create -volname "HardClaw" -srcfolder "$DMG_ROOT" -ov -format UDZO "$DIST_DIR/$ARTIFACT_NAME.dmg"
+
+# Plain binary tar.gz — just the binary, nothing else
+tar -czf "$DIST_DIR/$ARTIFACT_NAME.tar.gz" -C "$BUILD_DIR" hardclaw

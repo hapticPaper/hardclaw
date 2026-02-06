@@ -355,9 +355,7 @@ impl App {
     }
 
     fn check_environment(&mut self) {
-        // First: DETECT what's already installed (read-only)
-        println!("\n🔍 Detecting installed environments...\n");
-
+        // Detect what's already installed (read-only, no output)
         let runtime_checks = EnvironmentCheck::detect_all();
         let ai_check = AIModelCheck::detect();
 
@@ -374,7 +372,6 @@ impl App {
     fn run_environment_setup(&mut self) {
         // Run setup only for selected items
         if let Some(ref selection) = self.env_selection {
-            println!("\n🔧 Setting up selected environments...\n");
 
             let mut runtime_checks = Vec::new();
 

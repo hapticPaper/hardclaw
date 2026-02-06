@@ -716,8 +716,6 @@ print('OK' if len(h) == 64 else 'FAIL')
 
         let mut warnings = Vec::new();
 
-        eprintln!("🧪 Testing JavaScript sandbox with verification code...");
-
         // Test actual verification code execution
         let runtime = JavaScriptRuntime::new();
         let test_code = r"
@@ -737,10 +735,7 @@ function verify() {
         let test_output = b"test_verification_input"; // Same = should return true
 
         let available = match runtime.execute(test_code, test_input, test_output) {
-            Ok(true) => {
-                eprintln!("✅ JavaScript sandbox verified - executed array comparison");
-                true
-            }
+            Ok(true) => true,
             Ok(false) => {
                 warnings.push("Verification returned false (unexpected)".to_string());
                 false

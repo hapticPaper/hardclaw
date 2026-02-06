@@ -140,7 +140,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: dist/${{ matrix.artifact_name }}.dmg
+          path: |
+            dist/${{ matrix.artifact_name }}.dmg
+            dist/${{ matrix.artifact_name }}.tar.gz
 
       - name: Upload artifact (Linux)
         if: runner.os == 'Linux'
@@ -223,49 +225,44 @@ jobs:
           
           ### Binaries
           
-          Download the appropriate binary for your platform:
-          
-          **Linux**
-          - x86_64: `hardclaw-linux-x86_64.tar.gz`
-          - ARM64: `hardclaw-linux-aarch64.tar.gz`
-          - AppImage (x86_64): `hardclaw-linux-x86_64.AppImage`
-          - AppImage (ARM64): `hardclaw-linux-aarch64.AppImage`
-          - Debian/Ubuntu: `.deb` (x86_64 + ARM64)
-          - Fedora/RHEL: `.rpm` (x86_64 + ARM64)
-          
-          **macOS**
-          - Intel: `hardclaw-macos-x86_64.dmg`
-          - Apple Silicon: `hardclaw-macos-aarch64.dmg`
-          
-          **Windows**
-          - x86_64: `hardclaw-windows-x86_64.zip` (ARM64 users: use this via x64 emulation)
-          
-          ### MCP Server
-          
-          Install via npm:
+          Download the appropriate package for your platform:
+
+          **Plain Binary** (just the `hardclaw` executable)
+          | Platform | Download |
+          |---|---|
+          | Linux x86_64 | `hardclaw-linux-x86_64.tar.gz` |
+          | Linux ARM64 | `hardclaw-linux-aarch64.tar.gz` |
+          | macOS Intel | `hardclaw-macos-x86_64.tar.gz` |
+          | macOS Apple Silicon | `hardclaw-macos-aarch64.tar.gz` |
+          | Windows x86_64 | `hardclaw-windows-x86_64.zip` |
+
+          **Application Packages** (with icons, desktop integration, etc.)
+          | Platform | Download |
+          |---|---|
+          | macOS Intel | `hardclaw-macos-x86_64.dmg` |
+          | macOS Apple Silicon | `hardclaw-macos-aarch64.dmg` |
+          | Linux x86_64 | `.deb` / `.rpm` / `.AppImage` |
+          | Linux ARM64 | `.deb` / `.rpm` |
+
+          ### Usage
+
           ```bash
-          npm install -g @hardclaw/mcp-server
+          hardclaw                     # Launch TUI (default)
+          hardclaw node --verifier     # Run verifier node
+          hardclaw cli                 # Interactive CLI
           ```
-          
-          Or use with npx:
+
+          ### Installation
+
+          **Plain binary:** extract and place on your PATH.
+          **macOS .dmg:** open and drag HardClaw.app to Applications.
+          **Linux .deb/.rpm:** install with your package manager.
+
+          ### MCP Server
+
           ```bash
           npx -y @hardclaw/mcp-server
           ```
-          
-          ### Installation
-          
-          1. Download the appropriate package
-          2. macOS: open the `.dmg` and drag `HardClaw.app` to Applications
-          3. Linux: install `.deb`/`.rpm`, or extract the `.tar.gz` and copy `bin/` to your PATH
-          4. Windows: unzip and place binaries on your PATH
-          5. Run `hardclaw` to start onboarding
-          
-          ### What's Included
-          
-          Each package contains:
-          - `hardclaw` - Onboarding TUI
-          - `hardclaw-node` - Full node / verifier
-          - `hardclaw-cli` - CLI interface
           EOF
 
       - name: Create GitHub Release
