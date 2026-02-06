@@ -188,7 +188,7 @@ jobs:
           - Apple Silicon: `hardclaw-macos-aarch64.tar.gz`
           
           **Windows**
-          - x86_64: `hardclaw-windows-x86_64.zip`
+          - x86_64: `hardclaw-windows-x86_64.zip` (ARM64 users: use this via x64 emulation)
           
           ### MCP Server
           
