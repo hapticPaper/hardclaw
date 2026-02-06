@@ -1,6 +1,6 @@
 {
   "name": "@hardclaw/mcp-server",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "Model Context Protocol server for HardClaw - Proof-of-Verification Protocol",
   "type": "module",
   "main": "dist/index.js",
