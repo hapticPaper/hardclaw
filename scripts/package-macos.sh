@@ -34,11 +34,16 @@ if [ -t 0 ] && [ -t 1 ]; then
   # Already in a terminal — run directly
   exec "$DIR/hardclaw-bin" "$@"
 else
-  # Launched from Finder — open Terminal and run the TUI
+  # Launched from Finder — open Terminal with a comfortable size for the TUI
   osascript <<EOF
 tell application "Terminal"
   activate
-  do script "'$DIR/hardclaw-bin'"
+  set newTab to do script "'$DIR/hardclaw-bin'"
+  -- Resize window to fit onboarding screens (100 cols x 36 rows)
+  set theWindow to window 1
+  set number of columns of current settings of theWindow to 100
+  set number of rows of current settings of theWindow to 36
+  set bounds of theWindow to {100, 100, 920, 760}
 end tell
 EOF
 fi

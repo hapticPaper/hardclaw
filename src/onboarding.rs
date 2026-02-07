@@ -403,6 +403,20 @@ impl App {
     fn ui(&self, frame: &mut Frame) {
         let size = frame.area();
 
+        // Minimum terminal size for a usable TUI
+        const MIN_COLS: u16 = 80;
+        const MIN_ROWS: u16 = 24;
+        if size.width < MIN_COLS || size.height < MIN_ROWS {
+            let msg = Paragraph::new(format!(
+                "Terminal too small ({}\u{00d7}{}).\nPlease resize to at least {}\u{00d7}{}.",
+                size.width, size.height, MIN_COLS, MIN_ROWS
+            ))
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Yellow));
+            frame.render_widget(msg, size);
+            return;
+        }
+
         // Main layout
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -856,12 +870,19 @@ impl App {
 
         text.push(Line::from(""));
 
-        // AI option
+        // AI option — truncate model list to avoid overflow
         let ai_status = if selection.ai_detected {
             if selection.ai_models.is_empty() {
                 "✓ Ollama installed, no models".to_string()
             } else {
-                format!("✓ Models: {}", selection.ai_models.join(", "))
+                let models_str = selection.ai_models.join(", ");
+                if models_str.len() > 40 {
+                    let count = selection.ai_models.len();
+                    let truncated: String = models_str.chars().take(37).collect();
+                    format!("✓ {}... ({} models)", truncated, count)
+                } else {
+                    format!("✓ Models: {}", models_str)
+                }
             }
         } else {
             "✗ Ollama not installed".to_string()
@@ -966,7 +987,6 @@ impl App {
 
         let paragraph = Paragraph::new(text)
             .alignment(Alignment::Left)
-            .wrap(Wrap { trim: false })
             .block(
                 Block::default()
                     .borders(Borders::ALL)
@@ -974,7 +994,7 @@ impl App {
                     .title(" Select Environments "),
             );
 
-        frame.render_widget(paragraph, centered_rect(75, 80, area));
+        frame.render_widget(paragraph, centered_rect(90, 85, area));
     }
 
     fn render_run_node(&self, frame: &mut Frame, area: Rect) {
@@ -1245,10 +1265,17 @@ impl App {
             }),
         ]));
 
-        // Available models
+        // Available models (truncate long lists)
         if !ai_check.models.is_empty() {
+            let models_str = ai_check.models.join(", ");
+            let display = if models_str.len() > 60 {
+                let truncated: String = models_str.chars().take(57).collect();
+                format!("    Models: {}... ({} total)", truncated, ai_check.models.len())
+            } else {
+                format!("    Models: {}", models_str)
+            };
             text.push(Line::from(Span::styled(
-                format!("    Models: {}", ai_check.models.join(", ")),
+                display,
                 Style::default().fg(Color::Green),
             )));
         }
