@@ -180,8 +180,10 @@ impl App {
     }
 
     fn handle_input(&mut self, key: KeyCode, modifiers: KeyModifiers) -> bool {
-        // Ctrl+C always quits
-        if modifiers.contains(KeyModifiers::CONTROL) && key == KeyCode::Char('c') {
+        // Ctrl+C or 'q' always quits (except during active setup)
+        if (modifiers.contains(KeyModifiers::CONTROL) && key == KeyCode::Char('c'))
+            || (key == KeyCode::Char('q') && !matches!(self.state, AppState::EnvironmentSetup))
+        {
             return true;
         }
 
@@ -195,7 +197,6 @@ impl App {
                 KeyCode::Enter | KeyCode::Char(' ') => {
                     self.handle_menu_selection();
                 }
-                KeyCode::Char('q') => return true,
                 _ => {}
             },
             AppState::CreateWallet => match key {
@@ -230,8 +231,8 @@ impl App {
                         KeyCode::Char(' ') => selection.toggle(),
                         KeyCode::Enter => {
                             if selection.cursor == 2 && selection.any_selected() {
-                                // Run Setup selected
-                                self.run_environment_setup();
+                                // Run Setup selected - signal to run (terminal will be dropped first)
+                                self.state = AppState::EnvironmentSetup;
                             } else if selection.cursor == 3 || !selection.any_selected() {
                                 // Skip or nothing selected
                                 self.state = AppState::MainMenu;
@@ -260,7 +261,7 @@ impl App {
                 self.state = AppState::MainMenu;
             }
             AppState::NodeRunning => match key {
-                KeyCode::Char('q') | KeyCode::Esc => {
+                KeyCode::Esc => {
                     self.state = AppState::MainMenu;
                 }
                 _ => {}
@@ -367,7 +368,17 @@ impl App {
         };
     }
 
-    fn run_environment_setup(&mut self) {
+    /// Returns true if setup should be run (terminal needs to be dropped first)
+    fn should_run_setup(&self) -> bool {
+        if let Some(ref selection) = self.env_selection {
+            matches!(self.state, AppState::EnvironmentSetup) && selection.any_selected()
+        } else {
+            false
+        }
+    }
+
+    /// Run the actual environment setup (call after dropping terminal)
+    fn run_environment_setup_inner(&mut self) {
         // Run setup only for selected items
         if let Some(ref selection) = self.env_selection {
             let mut runtime_checks = Vec::new();
@@ -492,19 +503,21 @@ impl App {
 
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
         let hint = match &self.state {
-            AppState::Welcome => "Press any key to continue",
-            AppState::MainMenu => "j/k: Navigate | Enter: Select | q: Quit",
-            AppState::CreateWallet | AppState::LoadWallet => "Enter/y: Confirm | Esc/n: Cancel",
+            AppState::Welcome => "Press any key to continue | Ctrl+C/q: Quit",
+            AppState::MainMenu => "j/k: Navigate | Enter: Select | q/Ctrl+C: Quit",
+            AppState::CreateWallet | AppState::LoadWallet => {
+                "Enter/y: Confirm | Esc/n: Cancel | q/Ctrl+C: Quit"
+            }
             AppState::WalletCreated { .. }
             | AppState::WalletLoaded { .. }
             | AppState::RunNode
             | AppState::EnvironmentChecked { .. }
-            | AppState::Help => "Press any key to continue",
+            | AppState::Help => "Press any key to continue | q/Ctrl+C: Quit",
             AppState::EnvironmentSelection { .. } => {
-                "j/k: Navigate | Space: Toggle | Enter: Confirm | Esc: Cancel"
+                "j/k: Navigate | Space: Toggle | Enter: Confirm | Esc/q: Cancel"
             }
-            AppState::EnvironmentSetup => "Setting up environment...",
-            AppState::NodeRunning => "q: Stop node | Ctrl+C: Force quit",
+            AppState::EnvironmentSetup => "Setting up environment... | Ctrl+C: Force quit",
+            AppState::NodeRunning => "Esc: Stop node | q/Ctrl+C: Quit",
             AppState::Quit => "",
         };
 
@@ -552,9 +565,9 @@ impl App {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Percentage(30),
-                Constraint::Percentage(40),
-                Constraint::Percentage(30),
+                Constraint::Percentage(20),
+                Constraint::Percentage(60),
+                Constraint::Percentage(20),
             ])
             .split(area);
 
@@ -1409,6 +1422,21 @@ pub fn run() -> io::Result<()> {
 
     // Main loop
     loop {
+        // Check if we need to run setup (which requires dropping terminal)
+        if app.should_run_setup() {
+            // Temporarily restore terminal for native output
+            terminal::disable_raw_mode()?;
+            execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show)?;
+
+            // Run setup with normal terminal output
+            app.run_environment_setup_inner();
+
+            // Restore TUI
+            execute!(terminal.backend_mut(), EnterAlternateScreen, cursor::Hide)?;
+            terminal::enable_raw_mode()?;
+            terminal.clear()?;
+        }
+
         terminal.draw(|f| app.ui(f))?;
 
         if event::poll(Duration::from_millis(100))? {
