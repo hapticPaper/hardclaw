@@ -257,7 +257,10 @@ impl HardClawNode {
                             arr.copy_from_slice(&bytes);
                             Some(Address::from_bytes(arr))
                         } else {
-                            warn!("Skipping invalid pre-approved address (expected 20 bytes): {}", hex_str);
+                            warn!(
+                                "Skipping invalid pre-approved address (expected 20 bytes): {}",
+                                hex_str
+                            );
                             None
                         }
                     })
@@ -280,10 +283,8 @@ impl HardClawNode {
                     chain_id = %genesis_config.chain_id,
                     "Creating genesis block with config"
                 );
-                let genesis = Block::genesis_with_config(
-                    self.keypair.public_key().clone(),
-                    genesis_config,
-                );
+                let genesis =
+                    Block::genesis_with_config(self.keypair.public_key().clone(), genesis_config);
                 state.apply_block(genesis)?;
             } else {
                 info!("Creating genesis block (no genesis config)...");
@@ -484,7 +485,7 @@ impl HardClawNode {
 
 /// Special CLI commands that exit immediately
 enum NodeCommand {
-    Run(NodeConfig),
+    Run(Box<NodeConfig>),
     ShowSeed,
     Recover,
 }
@@ -545,7 +546,7 @@ fn parse_args(args: Vec<String>) -> NodeCommand {
         i += 1;
     }
 
-    NodeCommand::Run(config)
+    NodeCommand::Run(Box::new(config))
 }
 
 fn print_help() {
@@ -679,7 +680,7 @@ pub async fn run(args: Vec<String>) -> anyhow::Result<()> {
     }
 
     let config = match command {
-        NodeCommand::Run(c) => c,
+        NodeCommand::Run(c) => *c,
         _ => unreachable!(),
     };
 

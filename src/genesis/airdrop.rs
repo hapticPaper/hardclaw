@@ -34,9 +34,7 @@ impl AirdropConfig {
     /// Total airdrop pool
     #[must_use]
     pub fn total_pool(&self) -> HclawAmount {
-        HclawAmount::from_raw(
-            self.amount_per_participant.raw() * self.max_participants as u128,
-        )
+        HclawAmount::from_raw(self.amount_per_participant.raw() * self.max_participants as u128)
     }
 
     /// Minimum stake for all participants
@@ -252,7 +250,7 @@ mod tests {
     #[test]
     fn test_exhaustion() {
         let mut tracker = AirdropTracker::new(vec![]);
-        
+
         // Fill all slots - use u32 seed to ensure unique addresses
         for i in 0..MAX_GENESIS_PARTICIPANTS {
             let seed_bytes = i.to_le_bytes();
@@ -264,7 +262,7 @@ mod tests {
         }
 
         assert!(tracker.is_exhausted());
-        
+
         // Next one should fail
         let result = tracker.reserve_position(test_address(255), 1000);
         assert!(matches!(result, Err(GenesisError::AirdropExhausted)));
@@ -274,7 +272,7 @@ mod tests {
     fn test_pre_approved() {
         let addr = test_address(1);
         let tracker = AirdropTracker::new(vec![addr]);
-        
+
         assert!(tracker.is_pre_approved(&addr));
         assert!(!tracker.is_pre_approved(&test_address(2)));
     }
@@ -282,7 +280,7 @@ mod tests {
     #[test]
     fn test_unclaimed_pool() {
         let mut tracker = AirdropTracker::new(vec![]);
-        
+
         // Claim 100 positions
         for i in 0..100u8 {
             let addr = test_address(i);

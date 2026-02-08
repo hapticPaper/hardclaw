@@ -190,9 +190,10 @@ impl TransactionProcessor {
 
         // Check sender has funds for max fee
         let max_fee = tx.max_fee();
-        let sender_balance = accounts
-            .get(&tx.sender_address)
-            .map_or(crate::types::HclawAmount::ZERO, |a| a.available_balance());
+        let sender_balance = accounts.get(&tx.sender_address).map_or(
+            crate::types::HclawAmount::ZERO,
+            crate::state::AccountState::available_balance,
+        );
 
         if sender_balance < max_fee {
             return Err(ContractError::InsufficientBalance {
@@ -202,9 +203,7 @@ impl TransactionProcessor {
         }
 
         // Check nonce (should be sender's current nonce + 1)
-        let expected_nonce = accounts
-            .get(&tx.sender_address)
-            .map_or(0, |a| a.nonce + 1);
+        let expected_nonce = accounts.get(&tx.sender_address).map_or(0, |a| a.nonce + 1);
 
         if tx.nonce != expected_nonce {
             return Err(ContractError::InvalidTransaction(format!(
@@ -309,17 +308,16 @@ mod tests {
     #[test]
     fn test_execute_transaction() {
         let processor = TransactionProcessor::default();
-        let contract = MockContract { id: crate::crypto::Hash::ZERO };
+        let contract = MockContract {
+            id: crate::crypto::Hash::ZERO,
+        };
 
         let kp = Keypair::generate();
         let sender = Address::from_public_key(kp.public_key());
 
         // Set up accounts
         let mut accounts = HashMap::new();
-        accounts.insert(
-            sender,
-            AccountState::new(HclawAmount::from_hclaw(100)),
-        );
+        accounts.insert(sender, AccountState::new(HclawAmount::from_hclaw(100)));
 
         let mut storage = HashMap::new();
 

@@ -159,7 +159,6 @@ pub struct DynamicStakeConfig {
     pub max_increase_per_epoch_percent: u8,
     /// Blocks per epoch for rate limiting
     #[allow(dead_code)]
-
     pub epoch_blocks: u64,
 }
 
@@ -208,7 +207,8 @@ impl DynamicStakeConfig {
                 .raw()
                 .saturating_mul(self.max_increase_per_epoch_percent as u128)
                 / 100;
-            let max_allowed = HclawAmount::from_raw(prev_min_stake.raw().saturating_add(max_increase));
+            let max_allowed =
+                HclawAmount::from_raw(prev_min_stake.raw().saturating_add(max_increase));
             if target > max_allowed {
                 max_allowed
             } else {

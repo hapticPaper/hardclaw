@@ -7,9 +7,8 @@
 //! Ed25519 is retained ONLY for libp2p transport identity (in network module).
 
 use ml_dsa::{
-    EncodedSignature, EncodedVerifyingKey, MlDsa65,
-    Signature as MlDsaSignature, SigningKey as MlDsaSigningKey,
-    VerifyingKey as MlDsaVerifyingKey, B32,
+    EncodedSignature, EncodedVerifyingKey, MlDsa65, Signature as MlDsaSignature,
+    SigningKey as MlDsaSigningKey, VerifyingKey as MlDsaVerifyingKey, B32,
 };
 use rand::RngCore;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -350,8 +349,8 @@ pub fn verify(public_key: &PublicKey, message: &[u8], signature: &Signature) -> 
 
     let sig_encoded = EncodedSignature::<MlDsa65>::try_from(signature.0.as_slice())
         .map_err(|_| CryptoError::InvalidSignature)?;
-    let sig = MlDsaSignature::<MlDsa65>::decode(&sig_encoded)
-        .ok_or(CryptoError::InvalidSignature)?;
+    let sig =
+        MlDsaSignature::<MlDsa65>::decode(&sig_encoded).ok_or(CryptoError::InvalidSignature)?;
 
     use ml_dsa::signature::Verifier;
     vk.verify(message, &sig)
@@ -360,7 +359,8 @@ pub fn verify(public_key: &PublicKey, message: &[u8], signature: &Signature) -> 
 
 /// Restore a SigningKey from 32-byte seed format
 fn restore_signing_key(bytes: &[u8]) -> MlDsaSigningKey<MlDsa65> {
-    let seed: [u8; 32] = bytes.try_into()
+    let seed: [u8; 32] = bytes
+        .try_into()
         .expect("SecretKey should always contain 32 bytes");
     let b32 = B32::from(seed);
     MlDsaSigningKey::<MlDsa65>::from_seed(&b32)

@@ -6,10 +6,10 @@
 //! day 15's tokens — those tokens are burned at bootstrap end.
 //!
 //! Structure:
-//! - Immediate unlock: enough to meet min_stake (so they can participate)
+//! - Immediate unlock: enough to meet `min_stake` (so they can participate)
 //! - Remaining tokens: divided into 30 daily portions
 //! - Each daily portion unlocks ONLY if the verifier was active that day
-//!   (met the minimum attestation threshold via the LivenessTracker)
+//!   (met the minimum attestation threshold via the `LivenessTracker`)
 
 use serde::{Deserialize, Serialize};
 
@@ -21,11 +21,11 @@ use crate::types::{HclawAmount, Timestamp};
 pub struct VestingSchedule {
     /// Total grant amount
     pub total_amount: HclawAmount,
-    /// Amount immediately available (enough to meet min_stake)
+    /// Amount immediately available (enough to meet `min_stake`)
     pub immediate_amount: HclawAmount,
     /// Amount subject to daily vesting (total - immediate)
     pub vesting_amount: HclawAmount,
-    /// Per-day vesting amount (vesting_amount / 30)
+    /// Per-day vesting amount (`vesting_amount` / 30)
     pub daily_amount: HclawAmount,
     /// Bootstrap start timestamp (for day alignment)
     pub bootstrap_start: Timestamp,
@@ -104,7 +104,12 @@ impl VestingSchedule {
 
         // Add daily_amount for each active day from join_day onward
         for day in self.join_day..BOOTSTRAP_DAYS {
-            if self.daily_active.get(day as usize).copied().unwrap_or(false) {
+            if self
+                .daily_active
+                .get(day as usize)
+                .copied()
+                .unwrap_or(false)
+            {
                 vested = vested.saturating_add(self.daily_amount);
             }
         }
@@ -137,7 +142,13 @@ impl VestingSchedule {
     #[must_use]
     pub fn forfeited_amount(&self) -> HclawAmount {
         let missed_days = (self.join_day..BOOTSTRAP_DAYS)
-            .filter(|&day| !self.daily_active.get(day as usize).copied().unwrap_or(false))
+            .filter(|&day| {
+                !self
+                    .daily_active
+                    .get(day as usize)
+                    .copied()
+                    .unwrap_or(false)
+            })
             .count() as u128;
 
         HclawAmount::from_raw(self.daily_amount.raw() * missed_days)
@@ -146,8 +157,12 @@ impl VestingSchedule {
     /// Whether the schedule is fully vested (all eligible days were active)
     #[must_use]
     pub fn is_fully_vested(&self) -> bool {
-        (self.join_day..BOOTSTRAP_DAYS)
-            .all(|day| self.daily_active.get(day as usize).copied().unwrap_or(false))
+        (self.join_day..BOOTSTRAP_DAYS).all(|day| {
+            self.daily_active
+                .get(day as usize)
+                .copied()
+                .unwrap_or(false)
+        })
     }
 }
 

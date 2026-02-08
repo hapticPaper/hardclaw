@@ -135,7 +135,7 @@ pub struct DnsBootstrapClaim {
     pub amount: HclawAmount,
     /// When claimed
     pub claimed_at: Timestamp,
-    /// When fully vested (claimed_at + 24h)
+    /// When fully vested (`claimed_at` + 24h)
     pub vests_at: Timestamp,
 }
 
@@ -164,7 +164,7 @@ pub struct GenesisConfig {
     #[serde(default)]
     pub deploy_contracts: bool,
     /// Initial total voting power (sum of all stakes)
-    /// Only used if deploy_contracts is true
+    /// Only used if `deploy_contracts` is true
     #[serde(default)]
     pub initial_voting_power: u128,
 }
@@ -225,7 +225,9 @@ impl GenesisConfig {
             return Err(GenesisError::InvalidConfig("chain_id is empty".into()));
         }
         if self.max_participants == 0 {
-            return Err(GenesisError::InvalidConfig("max_participants is zero".into()));
+            return Err(GenesisError::InvalidConfig(
+                "max_participants is zero".into(),
+            ));
         }
         if self.airdrop_amount.raw() == 0 {
             return Err(GenesisError::InvalidConfig("airdrop_amount is zero".into()));
@@ -242,9 +244,8 @@ impl GenesisConfig {
     /// (airdrop pool + full DNS break-glass reserve)
     #[must_use]
     pub fn max_genesis_supply(&self) -> HclawAmount {
-        let airdrop_total = HclawAmount::from_raw(
-            self.airdrop_amount.raw() * self.max_participants as u128,
-        );
+        let airdrop_total =
+            HclawAmount::from_raw(self.airdrop_amount.raw() * self.max_participants as u128);
         let dns_reserve = HclawAmount::from_raw(
             self.dns_break_glass.tokens_each.raw() * self.dns_break_glass.max_nodes as u128,
         );
@@ -303,7 +304,10 @@ mod tests {
 
     #[test]
     fn test_flat_airdrop_pool() {
-        assert_eq!(AIRDROP_POOL_HCLAW, MAX_GENESIS_PARTICIPANTS as u64 * GENESIS_AIRDROP_AMOUNT);
+        assert_eq!(
+            AIRDROP_POOL_HCLAW,
+            MAX_GENESIS_PARTICIPANTS as u64 * GENESIS_AIRDROP_AMOUNT
+        );
         assert_eq!(AIRDROP_POOL_HCLAW, 500_000);
     }
 
@@ -311,7 +315,12 @@ mod tests {
     fn test_genesis_config_hash_deterministic() {
         let addrs = test_addresses(2);
         let authority = Keypair::generate();
-        let cfg1 = GenesisConfig::new("test-1".into(), addrs.clone(), authority.public_key().clone(), 1000);
+        let cfg1 = GenesisConfig::new(
+            "test-1".into(),
+            addrs.clone(),
+            authority.public_key().clone(),
+            1000,
+        );
         let cfg2 = GenesisConfig::new("test-1".into(), addrs, authority.public_key().clone(), 1000);
         assert_eq!(cfg1.config_hash(), cfg2.config_hash());
     }

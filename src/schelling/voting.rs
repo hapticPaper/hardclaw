@@ -237,8 +237,12 @@ mod tests {
         let voter = Keypair::generate();
 
         // Commit
-        let vote =
-            VerificationVote::commit(Hash::ZERO, voter.public_key().clone(), VoteResult::Accept, 85);
+        let vote = VerificationVote::commit(
+            Hash::ZERO,
+            voter.public_key().clone(),
+            VoteResult::Accept,
+            85,
+        );
         let nonce = vote.nonce.unwrap();
 
         round.add_commitment(vote).unwrap();
@@ -259,10 +263,18 @@ mod tests {
         let mut round = VotingRound::new(Hash::ZERO, 1000, 1000);
         let voter = Keypair::generate();
 
-        let first_vote =
-            VerificationVote::commit(Hash::ZERO, voter.public_key().clone(), VoteResult::Accept, 85);
-        let second_vote =
-            VerificationVote::commit(Hash::ZERO, voter.public_key().clone(), VoteResult::Reject, 30);
+        let first_vote = VerificationVote::commit(
+            Hash::ZERO,
+            voter.public_key().clone(),
+            VoteResult::Accept,
+            85,
+        );
+        let second_vote = VerificationVote::commit(
+            Hash::ZERO,
+            voter.public_key().clone(),
+            VoteResult::Reject,
+            30,
+        );
 
         round.add_commitment(first_vote).unwrap();
         assert!(matches!(
@@ -284,8 +296,12 @@ mod tests {
                 (VoteResult::Reject, 40)
             };
 
-            let vote =
-                VerificationVote::commit(Hash::ZERO, voter.public_key().clone(), vote_result, quality);
+            let vote = VerificationVote::commit(
+                Hash::ZERO,
+                voter.public_key().clone(),
+                vote_result,
+                quality,
+            );
             let nonce = vote.nonce.unwrap();
             round.add_commitment(vote).unwrap();
 

@@ -32,6 +32,19 @@
     clippy::cast_sign_loss,
     clippy::cast_precision_loss,
     clippy::cast_lossless,
+    // Allow pedantic style lints
+    clippy::doc_markdown,
+    clippy::uninlined_format_args,
+    clippy::items_after_statements,
+    clippy::or_fun_call,
+    clippy::unnecessary_literal_bound,
+    clippy::option_if_let_else,
+    clippy::items_after_test_module,
+    clippy::needless_pass_by_ref_mut,
+    clippy::unnecessary_wraps,
+    clippy::manual_abs_diff,
+    clippy::overly_complex_bool_expr,
+    dead_code,
     // Const fn not always beneficial for complex types
     clippy::missing_const_for_fn,
     // Self methods kept for API consistency even if unused

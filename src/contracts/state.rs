@@ -54,6 +54,7 @@ enum StateMutation {
         /// Old value (for rollback)
         old_value: Option<Vec<u8>>,
         /// New value
+        #[allow(dead_code)]
         new_value: Vec<u8>,
     },
 }
@@ -84,9 +85,10 @@ impl<'a> ContractState<'a> {
     /// Get available balance (not staked)
     #[must_use]
     pub fn available_balance(&self, address: &Address) -> HclawAmount {
-        self.accounts
-            .get(address)
-            .map_or(HclawAmount::ZERO, |a| a.available_balance())
+        self.accounts.get(address).map_or(
+            HclawAmount::ZERO,
+            super::super::state::AccountState::available_balance,
+        )
     }
 
     /// Credit an account
@@ -98,14 +100,19 @@ impl<'a> ContractState<'a> {
         account.credit(amount);
 
         // Record mutation for potential rollback
-        self.mutations.push(StateMutation::Credit { address, amount });
+        self.mutations
+            .push(StateMutation::Credit { address, amount });
     }
 
     /// Debit an account
     ///
     /// # Errors
     /// Returns error if insufficient balance
-    pub fn debit(&mut self, address: Address, amount: HclawAmount) -> Result<(), super::ContractError> {
+    pub fn debit(
+        &mut self,
+        address: Address,
+        amount: HclawAmount,
+    ) -> Result<(), super::ContractError> {
         // Validate balance
         let account = self.accounts.entry(address).or_default();
         if account.available_balance() < amount {
@@ -116,12 +123,13 @@ impl<'a> ContractState<'a> {
         }
 
         // Apply debit
-        account.debit(amount).map_err(|e| {
-            super::ContractError::ExecutionFailed(format!("debit failed: {}", e))
-        })?;
+        account
+            .debit(amount)
+            .map_err(|e| super::ContractError::ExecutionFailed(format!("debit failed: {e}")))?;
 
         // Record mutation
-        self.mutations.push(StateMutation::Debit { address, amount });
+        self.mutations
+            .push(StateMutation::Debit { address, amount });
 
         Ok(())
     }
@@ -314,7 +322,9 @@ mod tests {
         state.credit(alice, HclawAmount::from_hclaw(100));
 
         // Transfer to Bob
-        state.transfer(alice, bob, HclawAmount::from_hclaw(30)).unwrap();
+        state
+            .transfer(alice, bob, HclawAmount::from_hclaw(30))
+            .unwrap();
 
         assert_eq!(state.balance(&alice).whole_hclaw(), 70);
         assert_eq!(state.balance(&bob).whole_hclaw(), 30);

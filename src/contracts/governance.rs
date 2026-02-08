@@ -10,18 +10,16 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::contracts::{Contract, ContractError, ContractResult, ContractEvent, ExecutionResult};
 use crate::contracts::state::ContractState;
 use crate::contracts::transaction::ContractTransaction;
+use crate::contracts::{Contract, ContractError, ContractEvent, ContractResult, ExecutionResult};
 use crate::crypto::Hash;
 use crate::types::{Address, GovernanceAction};
 
 /// Governance contract ID (deterministic hash of contract name)
 pub const GOVERNANCE_CONTRACT_ID: Hash = Hash::from_bytes([
-    0x67, 0x0f, 0x8a, 0x3d, 0x1c, 0xe2, 0x49, 0xb7,
-    0x95, 0x2a, 0xf4, 0x68, 0xd0, 0x1b, 0x7c, 0x8e,
-    0x52, 0xc9, 0x31, 0xa6, 0x0d, 0xf3, 0x6b, 0x94,
-    0x28, 0xe5, 0xb1, 0x47, 0x9d, 0x0c, 0x5f, 0x82,
+    0x67, 0x0f, 0x8a, 0x3d, 0x1c, 0xe2, 0x49, 0xb7, 0x95, 0x2a, 0xf4, 0x68, 0xd0, 0x1b, 0x7c, 0x8e,
+    0x52, 0xc9, 0x31, 0xa6, 0x0d, 0xf3, 0x6b, 0x94, 0x28, 0xe5, 0xb1, 0x47, 0x9d, 0x0c, 0x5f, 0x82,
 ]);
 
 /// Minimum voting period (7 days in milliseconds)
@@ -159,20 +157,16 @@ impl GovernanceContract {
         }
 
         // Generate proposal ID
-        let proposal_id = crate::crypto::hash_data(&bincode::serialize(&(
-            &proposer,
-            &title,
-            &description,
-            &actions,
-            now,
-        )).unwrap());
+        let proposal_id = crate::crypto::hash_data(
+            &bincode::serialize(&(&proposer, &title, &description, &actions, now)).unwrap(),
+        );
 
         // Create proposal
         let proposal = Proposal {
             id: proposal_id,
             proposer,
             title: title.clone(),
-            description: description.clone(),
+            description,
             actions,
             created_at: now,
             voting_ends_at,
@@ -186,7 +180,7 @@ impl GovernanceContract {
         let proposal_key = format!("proposal:{}", hex::encode(proposal_id.as_bytes()));
         let proposal_data = bincode::serialize(&proposal)
             .map_err(|e| ContractError::ExecutionFailed(format!("Serialization failed: {}", e)))?;
-        
+
         state.storage_write(proposer, proposal_key.as_bytes().to_vec(), proposal_data);
 
         self.proposals.insert(proposal_id, proposal);
@@ -211,7 +205,9 @@ impl GovernanceContract {
         voting_power: u128,
     ) -> ContractResult<()> {
         // Get proposal
-        let proposal = self.proposals.get_mut(&proposal_id)
+        let proposal = self
+            .proposals
+            .get_mut(&proposal_id)
             .ok_or_else(|| ContractError::ExecutionFailed("Proposal not found".to_string()))?;
 
         // Check proposal is active
@@ -261,7 +257,9 @@ impl GovernanceContract {
         proposal_id: Hash,
     ) -> ContractResult<()> {
         // Get proposal
-        let proposal = self.proposals.get_mut(&proposal_id)
+        let proposal = self
+            .proposals
+            .get_mut(&proposal_id)
             .ok_or_else(|| ContractError::ExecutionFailed("Proposal not found".to_string()))?;
 
         // Check voting period ended
@@ -275,7 +273,7 @@ impl GovernanceContract {
         // Calculate quorum
         let total_votes = proposal.yes_votes + proposal.no_votes;
         let quorum = self.total_voting_power * u128::from(QUORUM_PERCENT) / 100;
-        
+
         if total_votes < quorum {
             proposal.status = ProposalStatus::Rejected;
             return Err(ContractError::ExecutionFailed(
@@ -334,7 +332,7 @@ impl GovernanceContract {
 
     /// Execute a governance action
     fn execute_governance_action(
-        &mut self,
+        &self,
         state: &mut ContractState<'_>,
         action: &GovernanceAction,
     ) -> ContractResult<()> {
@@ -349,7 +347,11 @@ impl GovernanceContract {
                 );
                 Ok(())
             }
-            GovernanceAction::ContractUpgrade { contract_id, new_code, new_code_hash } => {
+            GovernanceAction::ContractUpgrade {
+                contract_id,
+                new_code,
+                new_code_hash,
+            } => {
                 // Store new contract code
                 let upgrade_key = format!("upgrade:{}", hex::encode(contract_id.as_bytes()));
                 state.storage_write(
@@ -366,11 +368,15 @@ impl GovernanceContract {
                 );
                 Ok(())
             }
-            GovernanceAction::TreasurySpend { recipient, amount, purpose } => {
+            GovernanceAction::TreasurySpend {
+                recipient,
+                amount,
+                purpose,
+            } => {
                 // Transfer from treasury (system address) to recipient
                 let treasury = Address::from_bytes([0; 20]);
                 state.transfer(treasury, *recipient, *amount)?;
-                
+
                 // Log the purpose
                 let spend_key = format!("treasury_spend:{}", hex::encode(recipient.as_bytes()));
                 state.storage_write(
@@ -380,7 +386,10 @@ impl GovernanceContract {
                 );
                 Ok(())
             }
-            GovernanceAction::EmergencyPause { contract_id, reason } => {
+            GovernanceAction::EmergencyPause {
+                contract_id,
+                reason,
+            } => {
                 // Mark contract as paused
                 let pause_key = format!("paused:{}", hex::encode(contract_id.as_bytes()));
                 state.storage_write(
@@ -461,7 +470,13 @@ impl Contract for GovernanceContract {
                 in_favor,
                 voting_power,
             } => {
-                contract.execute_vote(state, tx.sender_address, proposal_id, in_favor, voting_power)?;
+                contract.execute_vote(
+                    state,
+                    tx.sender_address,
+                    proposal_id,
+                    in_favor,
+                    voting_power,
+                )?;
             }
             GovernanceTransactionKind::Execute { proposal_id } => {
                 contract.execute_proposal(state, proposal_id)?;
@@ -564,14 +579,16 @@ mod tests {
         // Create proposal
         let now = crate::types::now_millis();
         let voting_ends = now + MIN_VOTING_PERIOD + 1000;
-        let proposal_id = contract.execute_create_proposal(
-            &mut state,
-            voter,
-            "Test".to_string(),
-            "Test".to_string(),
-            vec![],
-            voting_ends,
-        ).unwrap();
+        let proposal_id = contract
+            .execute_create_proposal(
+                &mut state,
+                voter,
+                "Test".to_string(),
+                "Test".to_string(),
+                vec![],
+                voting_ends,
+            )
+            .unwrap();
 
         // Vote
         let result = contract.execute_vote(&mut state, voter, proposal_id, true, 100);
@@ -601,19 +618,25 @@ mod tests {
 
         let now = crate::types::now_millis();
         let voting_ends = now + MIN_VOTING_PERIOD + 1000;
-        let proposal_id = contract.execute_create_proposal(
-            &mut state,
-            voter,
-            "Test".to_string(),
-            "Test".to_string(),
-            vec![],
-            voting_ends,
-        ).unwrap();
+        let proposal_id = contract
+            .execute_create_proposal(
+                &mut state,
+                voter,
+                "Test".to_string(),
+                "Test".to_string(),
+                vec![],
+                voting_ends,
+            )
+            .unwrap();
 
         // First vote succeeds
-        assert!(contract.execute_vote(&mut state, voter, proposal_id, true, 100).is_ok());
+        assert!(contract
+            .execute_vote(&mut state, voter, proposal_id, true, 100)
+            .is_ok());
 
         // Second vote fails
-        assert!(contract.execute_vote(&mut state, voter, proposal_id, true, 100).is_err());
+        assert!(contract
+            .execute_vote(&mut state, voter, proposal_id, true, 100)
+            .is_err());
     }
 }

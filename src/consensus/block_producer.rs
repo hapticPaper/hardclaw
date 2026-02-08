@@ -208,7 +208,8 @@ mod tests {
         );
         job.signature = requester_kp.sign(&job.signing_bytes());
 
-        let mut solution = SolutionCandidate::new(job.id, solver_kp.public_key().clone(), output.to_vec());
+        let mut solution =
+            SolutionCandidate::new(job.id, solver_kp.public_key().clone(), output.to_vec());
         solution.signature = solver_kp.sign(&solution.signing_bytes());
 
         (job, solution)
@@ -254,8 +255,11 @@ mod tests {
 
         // Create bad solution
         let solver_kp = Keypair::generate();
-        let mut bad_solution =
-            SolutionCandidate::new(job.id, solver_kp.public_key().clone(), b"wrong output".to_vec());
+        let mut bad_solution = SolutionCandidate::new(
+            job.id,
+            solver_kp.public_key().clone(),
+            b"wrong output".to_vec(),
+        );
         bad_solution.signature = solver_kp.sign(&bad_solution.signing_bytes());
 
         // Verify - should succeed but not pass

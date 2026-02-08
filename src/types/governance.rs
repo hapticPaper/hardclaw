@@ -10,7 +10,7 @@ use crate::types::{Address, HclawAmount, Id};
 pub enum GovernanceAction {
     /// Update a chain parameter
     ParameterUpdate {
-        /// Parameter key (e.g., "min_stake", "block_time_ms")
+        /// Parameter key (e.g., "`min_stake`", "`block_time_ms`")
         key: String,
         /// New value (encoded as bytes)
         value: Vec<u8>,

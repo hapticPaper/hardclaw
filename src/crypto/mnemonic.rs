@@ -64,7 +64,7 @@ pub fn derive_ed25519_from_mnemonic(mnemonic: &Mnemonic, passphrase: &str) -> ([
 /// Deterministically derive an ML-DSA-65 keypair from a mnemonic.
 ///
 /// Derivation path: BIP39 mnemonic -> 64-byte seed (with passphrase)
-/// -> BLAKE3(domain || bip39_seed) -> 32-byte ML-DSA seed
+/// -> BLAKE3(domain || `bip39_seed`) -> 32-byte ML-DSA seed
 /// -> ML-DSA.KeyGen(seed) -> deterministic (pk, sk)
 ///
 /// The same mnemonic + passphrase always produces the same wallet.

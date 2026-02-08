@@ -89,7 +89,11 @@ impl SafetyReviewManager {
 
         // Simple weighted random selection (in production, use VRF for verifiability)
         weighted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        Ok(weighted.iter().take(count).map(|(pk, _)| pk.clone()).collect())
+        Ok(weighted
+            .iter()
+            .take(count)
+            .map(|(pk, _)| pk.clone())
+            .collect())
     }
 
     /// Submit a vote commitment

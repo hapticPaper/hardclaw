@@ -367,7 +367,9 @@ impl ChainState {
     /// Get contract storage value
     #[must_use]
     pub fn get_contract_storage(&self, contract: &Address, key: &[u8]) -> Option<Vec<u8>> {
-        self.contract_storage.get(&(*contract, key.to_vec())).cloned()
+        self.contract_storage
+            .get(&(*contract, key.to_vec()))
+            .cloned()
     }
 }
 

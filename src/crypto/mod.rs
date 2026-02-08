@@ -16,13 +16,13 @@ mod signature;
 
 pub use commitment::{CommitReveal, Commitment};
 pub use hash::{hash_data, merkle_root, Hash, Hasher};
-pub use mnemonic::{
-    generate_mnemonic, keypair_from_mnemonic, keypair_from_phrase, mnemonic_to_words,
-    parse_mnemonic, MNEMONIC_WORD_COUNT,
-};
 pub use kem::{
     decapsulate, encapsulate, KemCiphertext, KemKeypair, KemPublicKey, KemSecretKey, SharedSecret,
     KEM_CIPHERTEXT_SIZE, KEM_PUBKEY_SIZE, KEM_SECRET_KEY_SIZE, KEM_SHARED_SECRET_SIZE,
+};
+pub use mnemonic::{
+    generate_mnemonic, keypair_from_mnemonic, keypair_from_phrase, mnemonic_to_words,
+    parse_mnemonic, MNEMONIC_WORD_COUNT,
 };
 pub use signature::{
     sign, verify, Keypair, PublicKey, SecretKey, Signature, PUBKEY_SIZE, SECRET_KEY_SIZE,

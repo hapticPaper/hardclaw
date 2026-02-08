@@ -255,7 +255,7 @@ impl NetworkNode {
 
         // Build protocol version with chain ID for network isolation
         let protocol_version = match &config.chain_id {
-            Some(chain_id) => format!("{}/{}", PROTOCOL_VERSION, chain_id),
+            Some(chain_id) => format!("{PROTOCOL_VERSION}/{chain_id}"),
             None => PROTOCOL_VERSION.to_string(),
         };
 
@@ -535,7 +535,7 @@ impl NetworkNode {
 
                 // Check chain ID compatibility — disconnect peers on different chains
                 if let Some(ref our_chain_id) = self.config.chain_id {
-                    let expected_suffix = format!("/{}", our_chain_id);
+                    let expected_suffix = format!("/{our_chain_id}");
                     if !info.protocol_version.ends_with(&expected_suffix) {
                         warn!(
                             peer = %peer_id,
@@ -667,7 +667,10 @@ impl NetworkNode {
             TOPIC_JOBS => {
                 if let Ok(job) = bincode::deserialize::<JobPacket>(&message.data) {
                     debug!(job_id = %job.id, "Received job from network");
-                    let _ = self.event_tx.send(NetworkEvent::JobReceived(Box::new(job))).await;
+                    let _ = self
+                        .event_tx
+                        .send(NetworkEvent::JobReceived(Box::new(job)))
+                        .await;
                 } else {
                     warn!("Failed to deserialize job message");
                 }
@@ -686,7 +689,10 @@ impl NetworkNode {
             TOPIC_BLOCKS => {
                 if let Ok(block) = bincode::deserialize::<Block>(&message.data) {
                     debug!(block_hash = %block.hash, height = block.header.height, "Received block from network");
-                    let _ = self.event_tx.send(NetworkEvent::BlockReceived(Box::new(block))).await;
+                    let _ = self
+                        .event_tx
+                        .send(NetworkEvent::BlockReceived(Box::new(block)))
+                        .await;
                 } else {
                     warn!("Failed to deserialize block message");
                 }

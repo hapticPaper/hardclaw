@@ -22,9 +22,9 @@ pub struct AccuracyConfig {
     pub slash_threshold: f64,
     /// Below slash = active slashing
     pub critical_threshold: f64,
-    /// Slash percentage when below slash_threshold
+    /// Slash percentage when below `slash_threshold`
     pub slash_percent: u8,
-    /// Slash percentage when below critical_threshold
+    /// Slash percentage when below `critical_threshold`
     pub critical_slash_percent: u8,
     /// Minimum verifications before accuracy is evaluated
     pub min_verifications: usize,
@@ -186,10 +186,7 @@ impl AccuracyTracker {
 
     /// Record a verification outcome for a verifier
     pub fn record_outcome(&mut self, verifier: &Address, outcome: VerificationOutcome) {
-        let accuracy = self
-            .verifiers
-            .entry(*verifier)
-            .or_default();
+        let accuracy = self.verifiers.entry(*verifier).or_default();
         accuracy.record(outcome, &self.config);
     }
 

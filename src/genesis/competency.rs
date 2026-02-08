@@ -133,9 +133,7 @@ impl CompetencyManager {
         }
 
         // Generate deterministic challenge seeded from verifier address + timestamp
-        let seed = hash_data(
-            &[verifier.as_bytes().as_slice(), &now.to_le_bytes()].concat(),
-        );
+        let seed = hash_data(&[verifier.as_bytes().as_slice(), &now.to_le_bytes()].concat());
 
         // Create deterministic valid/invalid solution hashes from the seed
         let valid_hash = hash_data(&[seed.as_bytes().as_slice(), b"valid"].concat());
@@ -323,7 +321,10 @@ mod tests {
 
         // Try again too soon
         let result = manager.generate_challenge(verifier, 3000);
-        assert!(matches!(result, Err(CompetencyError::CooldownActive { .. })));
+        assert!(matches!(
+            result,
+            Err(CompetencyError::CooldownActive { .. })
+        ));
 
         // After cooldown
         let result = manager.generate_challenge(verifier, 1000 + RETRY_COOLDOWN_MS + 1);

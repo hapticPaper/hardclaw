@@ -10,22 +10,19 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::contracts::{Contract, ContractError, ContractResult, ExecutionResult};
 use crate::contracts::state::ContractState;
 use crate::contracts::transaction::ContractTransaction;
+use crate::contracts::{Contract, ContractError, ContractResult, ExecutionResult};
 use crate::crypto::Hash;
 use crate::genesis::bounty::{
-    distribute_bounty, is_winner_block, BountyTracker, BOUNTY_DAYS,
-    MIN_PUBLIC_NODES,
+    distribute_bounty, is_winner_block, BountyTracker, BOUNTY_DAYS, MIN_PUBLIC_NODES,
 };
 use crate::types::{Address, HclawAmount};
 
 /// Genesis bounty contract ID (deterministic hash of contract name)
 pub const GENESIS_BOUNTY_CONTRACT_ID: Hash = Hash::from_bytes([
-    0xb0, 0x47, 0x1c, 0xd8, 0x9f, 0x6e, 0x3a, 0x22,
-    0x5c, 0x94, 0xe1, 0xf2, 0x68, 0xd9, 0x0b, 0x7a,
-    0x31, 0x8e, 0x52, 0xc3, 0x1a, 0x0f, 0x93, 0x6d,
-    0x78, 0xb2, 0x45, 0xf6, 0x29, 0xc8, 0x11, 0x5e,
+    0xb0, 0x47, 0x1c, 0xd8, 0x9f, 0x6e, 0x3a, 0x22, 0x5c, 0x94, 0xe1, 0xf2, 0x68, 0xd9, 0x0b, 0x7a,
+    0x31, 0x8e, 0x52, 0xc3, 0x1a, 0x0f, 0x93, 0x6d, 0x78, 0xb2, 0x45, 0xf6, 0x29, 0xc8, 0x11, 0x5e,
 ]);
 
 /// Minimum stake to join genesis (50 HCLAW)
@@ -110,9 +107,9 @@ impl GenesisBountyContract {
     /// Execute join genesis action
     fn execute_join(
         &mut self,
-        state: &mut ContractState<'_>,
+        contract_state: &mut ContractState<'_>,
         sender: Address,
-        stake: HclawAmount,
+        stake_amount: HclawAmount,
     ) -> ContractResult<()> {
         // Check not already joined
         if self.participants.contains_key(&sender) {
@@ -130,24 +127,24 @@ impl GenesisBountyContract {
 
         // Validate stake
         let min_stake = HclawAmount::from_hclaw(MIN_STAKE);
-        if stake < min_stake {
+        if stake_amount < min_stake {
             return Err(ContractError::ExecutionFailed(format!(
                 "Stake {} below minimum {}",
-                stake, min_stake
+                stake_amount, min_stake
             )));
         }
 
         // Debit stake from participant
-        state.debit(sender, stake)?;
+        contract_state.debit(sender, stake_amount)?;
 
         // Credit airdrop to participant
         let airdrop = HclawAmount::from_hclaw(AIRDROP_AMOUNT);
-        state.credit(sender, airdrop);
+        contract_state.credit(sender, airdrop);
 
         // Store participant data
         let participant = Participant {
             address: sender,
-            stake,
+            stake: stake_amount,
             airdrop,
             bounties_earned: HclawAmount::ZERO,
             joined_at: crate::types::now_millis() as u64,
@@ -156,16 +153,20 @@ impl GenesisBountyContract {
         let participant_key = format!("participant:{}", hex::encode(sender.as_bytes()));
         let participant_data = bincode::serialize(&participant)
             .map_err(|e| ContractError::ExecutionFailed(format!("Serialization failed: {}", e)))?;
-        
-        state.storage_write(sender, participant_key.as_bytes().to_vec(), participant_data);
+
+        contract_state.storage_write(
+            sender,
+            participant_key.as_bytes().to_vec(),
+            participant_data,
+        );
 
         // Update participant count
         self.participants.insert(sender, participant);
         self.participant_count += 1;
 
         // Emit event
-        let event_data = bincode::serialize(&(sender, stake)).unwrap();
-        state.emit_event(crate::contracts::ContractEvent {
+        let event_data = bincode::serialize(&(sender, stake_amount)).unwrap();
+        contract_state.emit_event(crate::contracts::ContractEvent {
             contract_id: self.id,
             topic: "ParticipantJoined".to_string(),
             data: event_data,
@@ -353,11 +354,11 @@ mod tests {
             crate::state::AccountState::new(HclawAmount::from_hclaw(1000)),
         );
 
-        let mut state = ContractState::new(&mut accounts, &mut storage);
+        let mut contract_state = ContractState::new(&mut accounts, &mut storage);
 
         // Join with valid stake
-        let stake = HclawAmount::from_hclaw(MIN_STAKE);
-        let result = contract.execute_join(&mut state, sender, stake);
+        let stake_amount = HclawAmount::from_hclaw(MIN_STAKE);
+        let result = contract.execute_join(&mut contract_state, sender, stake_amount);
         assert!(result.is_ok());
 
         // Verify participant added
@@ -379,11 +380,11 @@ mod tests {
             crate::state::AccountState::new(HclawAmount::from_hclaw(1000)),
         );
 
-        let mut state = ContractState::new(&mut accounts, &mut storage);
+        let mut contract_state = ContractState::new(&mut accounts, &mut storage);
 
         // Try to join with insufficient stake
-        let stake = HclawAmount::from_hclaw(MIN_STAKE - 1);
-        let result = contract.execute_join(&mut state, sender, stake);
+        let stake_amount = HclawAmount::from_hclaw(MIN_STAKE - 1);
+        let result = contract.execute_join(&mut contract_state, sender, stake_amount);
         assert!(result.is_err());
     }
 
@@ -401,13 +402,17 @@ mod tests {
             crate::state::AccountState::new(HclawAmount::from_hclaw(1000)),
         );
 
-        let mut state = ContractState::new(&mut accounts, &mut storage);
-        let stake = HclawAmount::from_hclaw(MIN_STAKE);
+        let mut contract_state = ContractState::new(&mut accounts, &mut storage);
+        let stake_amount = HclawAmount::from_hclaw(MIN_STAKE);
 
         // First join succeeds
-        assert!(contract.execute_join(&mut state, sender, stake).is_ok());
+        assert!(contract
+            .execute_join(&mut contract_state, sender, stake_amount)
+            .is_ok());
 
         // Second join fails
-        assert!(contract.execute_join(&mut state, sender, stake).is_err());
+        assert!(contract
+            .execute_join(&mut contract_state, sender, stake_amount)
+            .is_err());
     }
 }

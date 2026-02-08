@@ -1,7 +1,7 @@
 //! Smart contract execution framework.
 //!
 //! This module provides the core infrastructure for executing smart contracts
-//! on HardClaw. Contracts are stateful programs that:
+//! on `HardClaw`. Contracts are stateful programs that:
 //! - Define verification tasks
 //! - Mutate chain state atomically
 //! - Can be governed via on-chain voting
@@ -185,7 +185,7 @@ impl ContractRegistry {
     /// Get contract by ID
     #[must_use]
     pub fn get(&self, id: &Id) -> Option<&dyn Contract> {
-        self.contracts.get(id).map(|c| c.as_ref())
+        self.contracts.get(id).map(std::convert::AsRef::as_ref)
     }
 
     /// Check if contract exists

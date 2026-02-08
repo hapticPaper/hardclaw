@@ -54,10 +54,15 @@ pub fn is_winner_block(block_hash: Hash, day: u8, threshold: u32) -> bool {
     let mut seed_data = block_hash.as_bytes().to_vec();
     seed_data.extend_from_slice(b"bounty");
     seed_data.extend_from_slice(&day.to_le_bytes());
-    
+
     let seed = hash_data(&seed_data);
-    let roll = u32::from_le_bytes([seed.as_bytes()[0], seed.as_bytes()[1], seed.as_bytes()[2], seed.as_bytes()[3]]);
-    
+    let roll = u32::from_le_bytes([
+        seed.as_bytes()[0],
+        seed.as_bytes()[1],
+        seed.as_bytes()[2],
+        seed.as_bytes()[3],
+    ]);
+
     roll < threshold
 }
 
@@ -137,7 +142,10 @@ impl BountyTracker {
     /// Get amount paid today
     #[must_use]
     pub fn paid_today(&self, day: u8) -> HclawAmount {
-        self.daily_paid.get(&day).copied().unwrap_or(HclawAmount::ZERO)
+        self.daily_paid
+            .get(&day)
+            .copied()
+            .unwrap_or(HclawAmount::ZERO)
     }
 
     /// Get remaining budget for today
@@ -175,7 +183,8 @@ impl BountyTracker {
     #[must_use]
     pub fn total_remaining(&self) -> HclawAmount {
         let pool = HclawAmount::from_hclaw(BOUNTY_POOL);
-        pool.saturating_sub(self.total_paid).saturating_sub(self.total_burned)
+        pool.saturating_sub(self.total_paid)
+            .saturating_sub(self.total_burned)
     }
 }
 
@@ -191,16 +200,23 @@ mod tests {
         }
         let pool = HclawAmount::from_hclaw(BOUNTY_POOL).raw();
         // Allow for small rounding error (< 1 HCLAW)
-        let diff = if total > pool { total - pool } else { pool - total };
+        let diff = if total > pool {
+            total - pool
+        } else {
+            pool - total
+        };
         let one_hclaw = HclawAmount::from_hclaw(1).raw();
-        assert!(diff < one_hclaw, "Total should sum to pool, got diff of {diff}");
+        assert!(
+            diff < one_hclaw,
+            "Total should sum to pool, got diff of {diff}"
+        );
     }
 
     #[test]
     fn test_bounty_peaks_at_day_60() {
         let peak_day = 60;
         let peak_amount = calculate_daily_budget(peak_day);
-        
+
         // Check that day 60 is >= all other days
         for day in 0..BOUNTY_DAYS {
             let amount = calculate_daily_budget(day);
@@ -237,9 +253,9 @@ mod tests {
             (Address::from_bytes([3; 20]), 4),  // 20%
         ];
         let amount = HclawAmount::from_hclaw(1000);
-        
+
         let distribution = distribute_bounty(contributors, amount);
-        
+
         assert_eq!(distribution.len(), 3);
         assert_eq!(distribution[0].1.whole_hclaw(), 500);
         assert_eq!(distribution[1].1.whole_hclaw(), 300);
@@ -250,11 +266,17 @@ mod tests {
     fn test_bounty_tracker_current_day() {
         let start = 1000;
         let tracker = BountyTracker::new(start);
-        
+
         assert_eq!(tracker.current_day(start), Some(0));
         assert_eq!(tracker.current_day(start + 24 * 60 * 60 * 1000), Some(1));
-        assert_eq!(tracker.current_day(start + 60 * 24 * 60 * 60 * 1000), Some(60));
-        assert_eq!(tracker.current_day(start + 89 * 24 * 60 * 60 * 1000), Some(89));
+        assert_eq!(
+            tracker.current_day(start + 60 * 24 * 60 * 60 * 1000),
+            Some(60)
+        );
+        assert_eq!(
+            tracker.current_day(start + 89 * 24 * 60 * 60 * 1000),
+            Some(89)
+        );
         assert_eq!(tracker.current_day(start + 90 * 24 * 60 * 60 * 1000), None);
     }
 
@@ -262,20 +284,23 @@ mod tests {
     fn test_bounty_tracker_remaining() {
         let start = 1000;
         let mut tracker = BountyTracker::new(start);
-        
+
         let day_10_budget = calculate_daily_budget(10);
         assert_eq!(tracker.remaining_today(10), day_10_budget);
-        
+
         tracker.record_payout(10, HclawAmount::from_hclaw(1000));
         let remaining = tracker.remaining_today(10);
-        assert_eq!(remaining, day_10_budget.saturating_sub(HclawAmount::from_hclaw(1000)));
+        assert_eq!(
+            remaining,
+            day_10_budget.saturating_sub(HclawAmount::from_hclaw(1000))
+        );
     }
 
     #[test]
     fn test_bounty_tracker_not_active_until_min_nodes() {
         let tracker = BountyTracker::new(1000);
         assert!(!tracker.is_active());
-        
+
         let mut tracker = tracker;
         tracker.update_node_count(MIN_PUBLIC_NODES);
         assert!(tracker.is_active());
@@ -285,11 +310,11 @@ mod tests {
     fn test_slot_machine_deterministic() {
         let hash = hash_data(b"test");
         let threshold = u32::MAX / 2; // 50% chance
-        
+
         let result1 = is_winner_block(hash, 10, threshold);
         let result2 = is_winner_block(hash, 10, threshold);
         assert_eq!(result1, result2, "Same inputs should give same result");
-        
+
         // Different day should give different result
         let result3 = is_winner_block(hash, 11, threshold);
         // Not guaranteed to be different, but very likely

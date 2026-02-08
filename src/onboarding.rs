@@ -983,14 +983,12 @@ impl App {
             Span::styled("[ Skip / Return to Menu ]", skip_style),
         ]));
 
-        let paragraph = Paragraph::new(text)
-            .alignment(Alignment::Left)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Cyan))
-                    .title(" Select Environments "),
-            );
+        let paragraph = Paragraph::new(text).alignment(Alignment::Left).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(" Select Environments "),
+        );
 
         frame.render_widget(paragraph, centered_rect(90, 85, area));
     }
@@ -1268,7 +1266,11 @@ impl App {
             let models_str = ai_check.models.join(", ");
             let display = if models_str.len() > 60 {
                 let truncated: String = models_str.chars().take(57).collect();
-                format!("    Models: {}... ({} total)", truncated, ai_check.models.len())
+                format!(
+                    "    Models: {}... ({} total)",
+                    truncated,
+                    ai_check.models.len()
+                )
             } else {
                 format!("    Models: {}", models_str)
             };

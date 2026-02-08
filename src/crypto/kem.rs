@@ -151,8 +151,7 @@ impl KemCiphertext {
     /// # Errors
     /// Returns error if bytes are invalid
     pub fn from_bytes(bytes: &[u8]) -> CryptoResult<Self> {
-        hqc192::Ciphertext::from_bytes(bytes)
-            .map_err(|_| CryptoError::InvalidSignature)?;
+        hqc192::Ciphertext::from_bytes(bytes).map_err(|_| CryptoError::InvalidSignature)?;
         Ok(Self(bytes.to_vec()))
     }
 
@@ -234,10 +233,13 @@ pub fn encapsulate(public_key: &KemPublicKey) -> CryptoResult<(SharedSecret, Kem
 ///
 /// # Errors
 /// Returns error if the ciphertext or secret key is invalid
-pub fn decapsulate(ciphertext: &KemCiphertext, secret_key: &KemSecretKey) -> CryptoResult<SharedSecret> {
+pub fn decapsulate(
+    ciphertext: &KemCiphertext,
+    secret_key: &KemSecretKey,
+) -> CryptoResult<SharedSecret> {
     let pq_sk = secret_key.pq_key()?;
-    let pq_ct = hqc192::Ciphertext::from_bytes(&ciphertext.0)
-        .map_err(|_| CryptoError::InvalidSignature)?;
+    let pq_ct =
+        hqc192::Ciphertext::from_bytes(&ciphertext.0).map_err(|_| CryptoError::InvalidSignature)?;
     let ss = hqc192::decapsulate(&pq_ct, &pq_sk);
     Ok(SharedSecret(ss.as_bytes().to_vec()))
 }

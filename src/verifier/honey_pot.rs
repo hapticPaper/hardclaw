@@ -75,7 +75,8 @@ impl HoneyPotGenerator {
         let fake_output = self.generate_fake_output(job);
 
         // Create the honey pot solution
-        let solution = SolutionCandidate::create_honey_pot(job.id, fake_solver.clone(), fake_output);
+        let solution =
+            SolutionCandidate::create_honey_pot(job.id, fake_solver.clone(), fake_output);
 
         // Track this honey pot
         if let Ok(mut ids) = self.generated_ids.write() {

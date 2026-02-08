@@ -103,7 +103,7 @@ impl ContractTransaction {
         crate::crypto::verify(&self.sender, &self.signing_bytes(), &self.signature)
     }
 
-    /// Maximum fee (gas_limit * gas_price)
+    /// Maximum fee (`gas_limit` * `gas_price`)
     #[must_use]
     pub fn max_fee(&self) -> HclawAmount {
         HclawAmount::from_raw(self.gas_price.raw() * self.gas_limit as u128)

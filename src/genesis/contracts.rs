@@ -11,8 +11,8 @@ use crate::contracts::ContractRegistry;
 /// Initialize genesis contracts and return a configured transaction processor.
 ///
 /// This creates and registers:
-/// - GenesisBountyContract: Handles participant joining and bounty distribution
-/// - GovernanceContract: Enables on-chain governance from day 1
+/// - `GenesisBountyContract`: Handles participant joining and bounty distribution
+/// - `GovernanceContract`: Enables on-chain governance from day 1
 ///
 /// # Arguments
 /// * `bounty_start_time` - Timestamp when bounty period starts (typically genesis timestamp)

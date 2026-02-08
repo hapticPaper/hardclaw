@@ -302,7 +302,8 @@ mod tests {
         let kp = Keypair::generate();
         let solution_id = Hash::ZERO;
 
-        let vote = VerificationVote::commit(solution_id, kp.public_key().clone(), VoteResult::Accept, 85);
+        let vote =
+            VerificationVote::commit(solution_id, kp.public_key().clone(), VoteResult::Accept, 85);
 
         assert!(vote.is_revealed());
 
@@ -326,7 +327,8 @@ mod tests {
         let kp = Keypair::generate();
         let solution_id = Hash::ZERO;
 
-        let vote = VerificationVote::commit(solution_id, kp.public_key().clone(), VoteResult::Accept, 85);
+        let vote =
+            VerificationVote::commit(solution_id, kp.public_key().clone(), VoteResult::Accept, 85);
 
         let mut public = vote.public_commitment();
 

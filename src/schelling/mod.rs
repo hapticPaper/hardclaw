@@ -20,7 +20,9 @@ pub use voting::{SchellingVoting, VotingPhase, VotingRound};
 use std::collections::HashMap;
 
 use crate::crypto::PublicKey;
-use crate::types::{now_millis, Address, Id, Timestamp, VerificationVote, VoteResult, VotingResults};
+use crate::types::{
+    now_millis, Address, Id, Timestamp, VerificationVote, VoteResult, VotingResults,
+};
 use crate::verifier::accuracy::{AccuracyTracker, VerificationOutcome};
 
 /// Configuration for Schelling Point consensus

@@ -110,10 +110,7 @@ impl BootstrapState {
             .get_claim(address)
             .ok_or(GenesisError::InvalidConfig("claim disappeared".into()))?;
 
-        let join_day = self
-            .liveness
-            .day_for_timestamp(now)
-            .unwrap_or(0);
+        let join_day = self.liveness.day_for_timestamp(now).unwrap_or(0);
 
         let schedule = VestingSchedule::new(
             amount,
@@ -193,7 +190,10 @@ impl BootstrapState {
         }
 
         // Check hostname is under the authorized domain
-        if !claim.hostname.ends_with(&self.config.dns_break_glass.domain) {
+        if !claim
+            .hostname
+            .ends_with(&self.config.dns_break_glass.domain)
+        {
             return Err(GenesisError::DnsBreakGlassInvalid(format!(
                 "hostname {} is not under domain {}",
                 claim.hostname, self.config.dns_break_glass.domain,
@@ -201,11 +201,7 @@ impl BootstrapState {
         }
 
         // Check for duplicate claims (same address)
-        if self
-            .dns_claims
-            .iter()
-            .any(|c| c.address == claim.address)
-        {
+        if self.dns_claims.iter().any(|c| c.address == claim.address) {
             return Err(GenesisError::DnsBreakGlassInvalid(
                 "address has already claimed a DNS bootstrap slot".into(),
             ));
@@ -229,13 +225,10 @@ impl BootstrapState {
             return None;
         }
 
-        let should_complete =
-            now >= self.config.bootstrap_end || self.airdrop.is_exhausted();
+        let should_complete = now >= self.config.bootstrap_end || self.airdrop.is_exhausted();
 
         if should_complete {
-            self.phase = BootstrapPhase::Completed {
-                completed_at: now,
-            };
+            self.phase = BootstrapPhase::Completed { completed_at: now };
 
             Some(SystemJobKind::BootstrapComplete {
                 total_verifiers: self.airdrop.activated_count(),
@@ -328,9 +321,12 @@ mod tests {
         let jobs = state.process_day_end(0);
         // Pre-approved verifier joined and was active on day 0, so they get one day's vesting unlock
         assert_eq!(jobs.len(), 1, "Expected 1 vesting unlock job");
-        
+
         match &jobs[0] {
-            SystemJobKind::VestingUnlock { beneficiary, amount } => {
+            SystemJobKind::VestingUnlock {
+                beneficiary,
+                amount,
+            } => {
                 assert_eq!(*beneficiary, pre_approved[0]);
                 // Verifier gets daily vesting amount (depends on their tier)
                 assert!(amount.raw() > 0, "Vesting unlock should be > 0");

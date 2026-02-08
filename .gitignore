@@ -3,3 +3,4 @@
 **.log
 .DS_Store
 .vscode/settings.json
+.ragcoder-state.json

@@ -161,9 +161,7 @@ impl Block {
         let mut block = Self::new(0, Hash::ZERO, proposer, Vec::new(), Hash::ZERO);
         block.genesis_config = Some(config);
         // Recompute hash to include genesis config commitment
-        let config_hash = hash_data(
-            &bincode::serialize(&block.genesis_config).unwrap_or_default(),
-        );
+        let config_hash = hash_data(&bincode::serialize(&block.genesis_config).unwrap_or_default());
         let mut data = Vec::new();
         data.extend_from_slice(block.hash.as_bytes());
         data.extend_from_slice(config_hash.as_bytes());
@@ -291,7 +289,13 @@ mod tests {
     #[test]
     fn test_block_hash_deterministic() {
         let kp = Keypair::generate();
-        let block = Block::new(1, Hash::ZERO, kp.public_key().clone(), Vec::new(), Hash::ZERO);
+        let block = Block::new(
+            1,
+            Hash::ZERO,
+            kp.public_key().clone(),
+            Vec::new(),
+            Hash::ZERO,
+        );
 
         let computed = block.header.compute_hash();
         assert_eq!(computed, block.hash);
@@ -300,7 +304,13 @@ mod tests {
     #[test]
     fn test_consensus_threshold() {
         let kp = Keypair::generate();
-        let mut block = Block::new(1, Hash::ZERO, kp.public_key().clone(), Vec::new(), Hash::ZERO);
+        let mut block = Block::new(
+            1,
+            Hash::ZERO,
+            kp.public_key().clone(),
+            Vec::new(),
+            Hash::ZERO,
+        );
 
         // With 10 verifiers, need 7 (66% rounded up)
         assert!(!block.has_consensus(10));
@@ -320,7 +330,13 @@ mod tests {
     #[test]
     fn test_block_integrity() {
         let kp = Keypair::generate();
-        let block = Block::new(1, Hash::ZERO, kp.public_key().clone(), Vec::new(), Hash::ZERO);
+        let block = Block::new(
+            1,
+            Hash::ZERO,
+            kp.public_key().clone(),
+            Vec::new(),
+            Hash::ZERO,
+        );
 
         assert!(block.verify_integrity().is_ok());
     }
