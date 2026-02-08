@@ -117,6 +117,11 @@ jobs:
               CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc cargo build --release --target ${{ matrix.target }}
             "
 
+      - name: Fix cargo cache permissions (after Docker)
+        if: matrix.use_docker == true
+        run: |
+          sudo chown -R $(whoami):$(whoami) ~/.cargo || true
+
       - name: Build release binaries (non-Linux)
         if: matrix.use_docker != true
         run: cargo build --release --target ${{ matrix.target }}
