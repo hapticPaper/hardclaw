@@ -88,6 +88,7 @@ jobs:
             -w /workspace \
             -v ~/.cargo/registry:/root/.cargo/registry \
             -v ~/.cargo/git:/root/.cargo/git \
+            -e DEBIAN_FRONTEND=noninteractive \
             ubuntu:20.04 \
             bash -c "
               apt-get update && 
@@ -105,6 +106,7 @@ jobs:
             -w /workspace \
             -v ~/.cargo/registry:/root/.cargo/registry \
             -v ~/.cargo/git:/root/.cargo/git \
+            -e DEBIAN_FRONTEND=noninteractive \
             ubuntu:20.04 \
             bash -c "
               apt-get update && 
