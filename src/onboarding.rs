@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -1441,7 +1441,8 @@ pub fn run() -> io::Result<()> {
 
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
-                if app.handle_input(key.code, key.modifiers) {
+                // Only process key press events (ignore release/repeat to avoid double-triggering on Windows)
+                if key.kind == KeyEventKind::Press && app.handle_input(key.code, key.modifiers) {
                     break;
                 }
             }
