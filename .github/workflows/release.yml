@@ -20,13 +20,16 @@ jobs:
     strategy:
       matrix:
         include:
-          # Linux (glibc only - V8/deno_core doesn't have musl prebuilts)
-          # Using ubuntu-20.04 for GLIBC 2.31 compatibility with older production servers
+          # Linux builds use Docker for GLIBC compatibility
+          # Building in ubuntu:20.04 container ensures GLIBC 2.31 (compatible with production servers)
+          # while using readily-available ubuntu-latest runners
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-20.04
+            os: ubuntu-latest
+            use_docker: true
             artifact_name: hardclaw-linux-x86_64
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-20.04
+            os: ubuntu-latest
+            use_docker: true
             artifact_name: hardclaw-linux-aarch64
           
           # macOS
@@ -77,14 +80,43 @@ jobs:
           path: target
           key: ${{ runner.os }}-${{ matrix.target }}-target-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Build release binaries (Linux aarch64 on x64)
-        if: ${{ runner.os == 'Linux' && contains(matrix.target, 'aarch64') && runner.arch == 'X64' }}
-        run: cargo build --release --target ${{ matrix.target }}
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+      - name: Build in Docker (Linux with GLIBC 2.31)
+        if: matrix.use_docker == true && !contains(matrix.target, 'aarch64')
+        run: |
+          docker run --rm \
+            -v $PWD:/workspace \
+            -w /workspace \
+            -v ~/.cargo/registry:/root/.cargo/registry \
+            -v ~/.cargo/git:/root/.cargo/git \
+            ubuntu:20.04 \
+            bash -c "
+              apt-get update && 
+              apt-get install -y curl build-essential pkg-config libssl-dev && 
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable && 
+              . \$HOME/.cargo/env && 
+              cargo build --release --target ${{ matrix.target }}
+            "
 
-      - name: Build release binaries
-        if: ${{ !(runner.os == 'Linux' && contains(matrix.target, 'aarch64') && runner.arch == 'X64') }}
+      - name: Build in Docker (Linux aarch64 with GLIBC 2.31)
+        if: matrix.use_docker == true && contains(matrix.target, 'aarch64')
+        run: |
+          docker run --rm \
+            -v $PWD:/workspace \
+            -w /workspace \
+            -v ~/.cargo/registry:/root/.cargo/registry \
+            -v ~/.cargo/git:/root/.cargo/git \
+            ubuntu:20.04 \
+            bash -c "
+              apt-get update && 
+              apt-get install -y curl build-essential pkg-config libssl-dev gcc-aarch64-linux-gnu && 
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable && 
+              . \$HOME/.cargo/env && 
+              rustup target add ${{ matrix.target }} && 
+              CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc cargo build --release --target ${{ matrix.target }}
+            "
+
+      - name: Build release binaries (non-Linux)
+        if: matrix.use_docker != true
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package binaries (macOS)
