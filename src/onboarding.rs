@@ -146,6 +146,7 @@ struct App {
     wallet: Option<Wallet>,
     message: Option<String>,
     env_selection: Option<EnvSelectionState>,
+    start_node: bool,  // True if should start node after TUI exits
 }
 
 impl App {
@@ -176,6 +177,7 @@ impl App {
             wallet: None,
             message: None,
             env_selection: None,
+            start_node: false,
         }
     }
 
@@ -288,7 +290,9 @@ impl App {
                 if self.wallet.is_none() {
                     self.message = Some("Please create or load a wallet first".to_string());
                 } else {
-                    self.state = AppState::RunNode;
+                    // Set flag to start node after TUI exits
+                    self.start_node = true;
+                    self.state = AppState::Quit;
                 }
             }
             "Help" => {
@@ -1408,7 +1412,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
-pub fn run() -> io::Result<()> {
+pub fn run() -> io::Result<bool> {
     // Setup terminal
     terminal::enable_raw_mode()?;
     let mut stdout = stdout();
@@ -1457,5 +1461,6 @@ pub fn run() -> io::Result<()> {
     println!("\n  Thanks for using HardClaw!");
     println!("  \"We do not trust; we verify.\"\n");
 
-    Ok(())
+    // Return whether to start node
+    Ok(app.start_node)
 }

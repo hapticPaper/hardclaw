@@ -32,9 +32,22 @@ fn main() {
         }
         _ => {
             // Default: launch TUI onboarding
-            if let Err(e) = onboarding::run() {
-                eprintln!("TUI error: {}", e);
-                std::process::exit(1);
+            match onboarding::run() {
+                Ok(true) => {
+                    // User selected "Run Verifier Node" - start it
+                    println!("Starting verifier node...\n");
+                    if let Err(e) = node::run(vec!["--verifier".to_string()]) {
+                        eprintln!("Node error: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("TUI error: {}", e);
+                    std::process::exit(1);
+                }
+                Ok(false) => {
+                    // Normal TUI exit
+                }
             }
         }
     }
