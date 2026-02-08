@@ -277,7 +277,7 @@ mod tests {
         let kp = Keypair::generate();
         JobPacket::new(
             JobType::Deterministic,
-            *kp.public_key(),
+            kp.public_key().clone(),
             b"input".to_vec(),
             "Test".to_string(),
             HclawAmount::from_hclaw(bounty),
@@ -291,7 +291,7 @@ mod tests {
 
     fn create_test_solution(job_id: Id) -> SolutionCandidate {
         let kp = Keypair::generate();
-        SolutionCandidate::new(job_id, *kp.public_key(), b"output".to_vec())
+        SolutionCandidate::new(job_id, kp.public_key().clone(), b"output".to_vec())
     }
 
     #[test]

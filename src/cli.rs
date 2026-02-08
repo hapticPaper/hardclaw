@@ -173,7 +173,7 @@ pub fn run() {
 
                 let job = JobPacket::new(
                     job_type,
-                    *keypair.public_key(),
+                    keypair.public_key().clone(),
                     b"input data".to_vec(),
                     description.trim().to_string(),
                     HclawAmount::from_hclaw(bounty),

@@ -19,6 +19,10 @@ pub enum BurnReason {
     Slashing,
     /// Manual burn
     Manual,
+    /// Unclaimed airdrop positions burned at bootstrap end
+    UnclaimedAirdrop,
+    /// Forfeited vesting (missed liveness days)
+    ForfeitedVesting,
 }
 
 /// A burn event

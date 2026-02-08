@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{now_millis, Address, HclawAmount, Id, Timestamp};
+use super::{now_millis, Address, GovernanceAction, HclawAmount, Id, Timestamp};
 use crate::crypto::{hash_data, Hash, PublicKey, Signature};
 
 /// Type of job (determines verification method)
@@ -17,6 +17,80 @@ pub enum JobType {
     Deterministic,
     /// Subjective verification via Schelling Point consensus
     Subjective,
+    /// System/bootstrap job (chain operations during bootstrap period)
+    System,
+}
+
+/// Types of system jobs created during the bootstrap period.
+///
+/// System jobs represent internal chain operations that verifiers verify
+/// just like external jobs — keeping the chain self-hosting from block 0.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SystemJobKind {
+    /// The genesis bootstrap job itself (the "mother job")
+    GenesisBootstrap,
+    /// A new verifier claimed an airdrop position
+    AirdropClaim {
+        /// Recipient address
+        recipient: Address,
+        /// Position in the airdrop queue (1-indexed)
+        position: u32,
+        /// Amount allocated (total, including unvested)
+        amount: HclawAmount,
+    },
+    /// Vested tokens unlocked for a verifier
+    VestingUnlock {
+        /// Beneficiary address
+        beneficiary: Address,
+        /// Amount unlocked in this event
+        amount: HclawAmount,
+    },
+    /// A verifier deposited stake
+    StakeDeposit {
+        /// Staker address
+        staker: Address,
+        /// Amount staked
+        amount: HclawAmount,
+    },
+    /// A verifier passed the competency challenge
+    CompetencyVerified {
+        /// Verifier address
+        verifier: Address,
+    },
+    /// A DNS break-glass bootstrap node was authorized
+    DnsBootstrapClaim {
+        /// Node address
+        node: Address,
+        /// DNS hostname that resolved to this node
+        hostname: String,
+        /// Amount allocated
+        amount: HclawAmount,
+    },
+    /// The 30-day bootstrap period completed
+    BootstrapComplete {
+        /// Total verifiers that joined during bootstrap
+        total_verifiers: u32,
+        /// Total tokens distributed via airdrop
+        total_distributed: HclawAmount,
+    },
+    /// Contract execution (post-bootstrap)
+    ContractExecution {
+        /// Contract ID being executed
+        contract_id: Id,
+        /// Transaction ID
+        transaction_id: Id,
+        /// Input data for contract
+        input_data: Vec<u8>,
+        /// Proposed execution result
+        proposed_result: Vec<u8>,
+    },
+    /// Governance proposal submitted
+    GovernanceProposal {
+        /// Proposal ID
+        proposal_id: Id,
+        /// Type of governance action
+        action: GovernanceAction,
+    },
 }
 
 /// Status of a job in the system
@@ -79,6 +153,15 @@ pub enum VerificationSpec {
         min_voters: u8,
         /// Quality threshold (0-100)
         quality_threshold: u8,
+    },
+
+    /// System operation (bootstrap chain operations verified by state hash)
+    SystemOperation {
+        /// The system job kind
+        kind: SystemJobKind,
+        /// Expected state hash after applying this operation.
+        /// Verifiers re-execute the state transition and confirm the hash matches.
+        expected_state_hash: Hash,
     },
 }
 
@@ -143,7 +226,7 @@ impl JobPacket {
             verification,
             created_at: now,
             expires_at,
-            signature: Signature::from_bytes([0u8; 64]), // Placeholder
+            signature: Signature::placeholder(),
         };
 
         job.id = job.compute_id();
@@ -216,7 +299,7 @@ mod tests {
 
         let mut job = JobPacket::new(
             JobType::Deterministic,
-            *kp.public_key(),
+            kp.public_key().clone(),
             b"test input".to_vec(),
             "Test job".to_string(),
             HclawAmount::from_hclaw(100),
@@ -254,7 +337,7 @@ mod tests {
 
         let job1 = JobPacket::new(
             JobType::Deterministic,
-            *kp.public_key(),
+            kp.public_key().clone(),
             b"same input".to_vec(),
             "Same description".to_string(),
             HclawAmount::from_hclaw(100),

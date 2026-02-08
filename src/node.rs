@@ -12,7 +12,9 @@ use tracing_subscriber::FmtSubscriber;
 
 use hardclaw::{
     crypto::Keypair,
-    generate_mnemonic, keypair_from_phrase,
+    generate_mnemonic,
+    genesis::config::GenesisConfigToml,
+    keypair_from_phrase,
     mempool::Mempool,
     network::{NetworkConfig, NetworkEvent, NetworkNode, PeerInfo},
     state::ChainState,
@@ -25,6 +27,11 @@ fn data_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".hardclaw")
+}
+
+/// Get the data directory for a specific chain ID
+fn chain_data_dir(chain_id: &str) -> PathBuf {
+    data_dir().join("chains").join(chain_id)
 }
 
 /// Load or generate a persistent keypair using BIP39 mnemonic
@@ -53,32 +60,12 @@ fn load_or_create_keypair() -> Keypair {
         }
     }
 
-    // Try legacy format (node_key - 32 byte raw secret)
+    // Legacy Ed25519 key files (32 bytes) are incompatible with ML-DSA-65
     if legacy_key_path.exists() {
-        match fs::read(&legacy_key_path) {
-            Ok(bytes) if bytes.len() == 32 => {
-                let mut seed = [0u8; 32];
-                seed.copy_from_slice(&bytes);
-                match hardclaw::crypto::SecretKey::from_bytes(seed) {
-                    Ok(secret) => {
-                        info!(
-                            "Loaded wallet from legacy key file at {:?}",
-                            legacy_key_path
-                        );
-                        return Keypair::from_secret(secret);
-                    }
-                    Err(e) => {
-                        warn!("Invalid legacy key file: {}", e);
-                    }
-                }
-            }
-            Ok(bytes) => {
-                warn!("Legacy key file has wrong size: {} bytes", bytes.len());
-            }
-            Err(e) => {
-                warn!("Failed to read legacy key: {}", e);
-            }
-        }
+        warn!(
+            "Legacy Ed25519 key file found at {:?} — incompatible with ML-DSA-65. Generating new wallet.",
+            legacy_key_path
+        );
     }
 
     // Generate new mnemonic-based wallet
@@ -166,6 +153,12 @@ struct NodeConfig {
     external_addr: Option<String>,
     /// Enable verbose network debug messages
     network_debug: bool,
+    /// Chain ID for network isolation
+    chain_id: Option<String>,
+    /// Path to genesis config TOML file
+    genesis_config_path: Option<PathBuf>,
+    /// Reset genesis state before starting
+    reset_genesis: bool,
 }
 
 impl Default for NodeConfig {
@@ -177,6 +170,9 @@ impl Default for NodeConfig {
             port: 9000,
             external_addr: None,
             network_debug: false,
+            chain_id: None,
+            genesis_config_path: None,
+            reset_genesis: false,
         }
     }
 }
@@ -220,12 +216,80 @@ impl HardClawNode {
     async fn init(&mut self) -> anyhow::Result<()> {
         info!("Initializing HardClaw node...");
 
+        // Handle genesis reset if requested
+        if self.config.reset_genesis {
+            if let Some(ref chain_id) = self.config.chain_id {
+                if chain_id.starts_with("hardclaw-mainnet") {
+                    anyhow::bail!(
+                        "Refusing to reset mainnet chain '{chain_id}'. Use --force if you really mean it."
+                    );
+                }
+                let chain_dir = chain_data_dir(chain_id);
+                if chain_dir.exists() {
+                    info!("Resetting genesis state for chain '{}'", chain_id);
+                    fs::remove_dir_all(&chain_dir)?;
+                }
+            }
+        }
+
+        // Ensure chain data directory exists
+        if let Some(ref chain_id) = self.config.chain_id {
+            let chain_dir = chain_data_dir(chain_id);
+            fs::create_dir_all(&chain_dir)?;
+        }
+
         // Initialize genesis block if needed
         let mut state = self.state.write().await;
         if state.height() == 0 {
-            info!("Creating genesis block...");
-            let genesis = Block::genesis(*self.keypair.public_key());
-            state.apply_block(genesis)?;
+            // Load genesis config if provided
+            if let Some(ref genesis_path) = self.config.genesis_config_path {
+                info!("Loading genesis config from {:?}", genesis_path);
+                let toml_config = GenesisConfigToml::load_from_file(genesis_path)?;
+
+                // Parse pre-approved addresses (hex-encoded)
+                let pre_approved: Vec<Address> = toml_config
+                    .pre_approved
+                    .iter()
+                    .filter_map(|hex_str| {
+                        let bytes = hex::decode(hex_str).ok()?;
+                        if bytes.len() == 20 {
+                            let mut arr = [0u8; 20];
+                            arr.copy_from_slice(&bytes);
+                            Some(Address::from_bytes(arr))
+                        } else {
+                            warn!("Skipping invalid pre-approved address (expected 20 bytes): {}", hex_str);
+                            None
+                        }
+                    })
+                    .collect();
+
+                // Parse authority key
+                let authority_bytes = hex::decode(&toml_config.authority_key)
+                    .map_err(|e| anyhow::anyhow!("Invalid authority key hex: {}", e))?;
+                let authority_key = hardclaw::crypto::PublicKey::from_bytes(&authority_bytes)
+                    .map_err(|e| anyhow::anyhow!("Invalid authority key: {}", e))?;
+
+                let genesis_config = hardclaw::genesis::GenesisConfig::new(
+                    toml_config.chain_id.clone(),
+                    pre_approved,
+                    authority_key,
+                    0,
+                );
+
+                info!(
+                    chain_id = %genesis_config.chain_id,
+                    "Creating genesis block with config"
+                );
+                let genesis = Block::genesis_with_config(
+                    self.keypair.public_key().clone(),
+                    genesis_config,
+                );
+                state.apply_block(genesis)?;
+            } else {
+                info!("Creating genesis block (no genesis config)...");
+                let genesis = Block::genesis(self.keypair.public_key().clone());
+                state.apply_block(genesis)?;
+            }
         }
 
         info!("Node initialized at height {}", state.height());
@@ -243,10 +307,12 @@ impl HardClawNode {
 
         // Create peer info
         let peer_info = PeerInfo {
-            public_key: *self.keypair.public_key(),
+            public_key: self.keypair.public_key().clone(),
+            kem_public_key: None,
             address: network_config.listen_addr.clone(),
             is_verifier: self.config.is_verifier,
             version: 1,
+            chain_id: self.config.chain_id.clone(),
         };
 
         // Create network node
@@ -329,7 +395,7 @@ impl HardClawNode {
                     info!("Received job: {}", job.id);
                 }
                 let mut mp = self.mempool.write().await;
-                if let Err(e) = mp.add_job(job) {
+                if let Err(e) = mp.add_job(*job) {
                     warn!("Failed to add job to mempool: {}", e);
                 }
             }
@@ -344,7 +410,7 @@ impl HardClawNode {
                     info!("Block hash: {}", block.hash);
                 }
                 let mut st = self.state.write().await;
-                if let Err(e) = st.apply_block(block) {
+                if let Err(e) = st.apply_block(*block) {
                     warn!("Failed to apply block: {}", e);
                 }
             }
@@ -454,6 +520,22 @@ fn parse_args(args: Vec<String>) -> NodeCommand {
             "--no-official-bootstrap" => {
                 config.network.use_official_bootstrap = false;
             }
+            "--chain-id" => {
+                i += 1;
+                if i < args.len() {
+                    config.chain_id = Some(args[i].clone());
+                    config.network.chain_id = Some(args[i].clone());
+                }
+            }
+            "--genesis" => {
+                i += 1;
+                if i < args.len() {
+                    config.genesis_config_path = Some(PathBuf::from(&args[i]));
+                }
+            }
+            "--reset-genesis" => {
+                config.reset_genesis = true;
+            }
             "--help" | "-h" => {
                 print_help();
                 std::process::exit(0);
@@ -483,6 +565,9 @@ fn print_help() {
     println!("    --external-addr <ADDR>      External address for NAT traversal");
     println!("    --network-debug             Enable verbose network logging");
     println!("    --no-official-bootstrap     Don't use official bootstrap nodes");
+    println!("    --chain-id <ID>             Chain ID for network isolation");
+    println!("    --genesis <PATH>            Path to genesis config TOML file");
+    println!("    --reset-genesis             Wipe chain state and re-init from genesis");
     println!("    -h, --help                  Print help");
 }
 

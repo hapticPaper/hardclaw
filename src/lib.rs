@@ -47,7 +47,9 @@
 )]
 
 pub mod consensus;
+pub mod contracts;
 pub mod crypto;
+pub mod genesis;
 pub mod mempool;
 pub mod network;
 pub mod safety;

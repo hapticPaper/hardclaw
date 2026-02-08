@@ -83,13 +83,13 @@ impl SafetyReviewManager {
                     .reputations
                     .get(pk)
                     .map_or(0.5, ReviewerReputation::trust_score); // New reviewers start at 0.5
-                (*pk, trust)
+                (pk.clone(), trust)
             })
             .collect();
 
         // Simple weighted random selection (in production, use VRF for verifiability)
         weighted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        Ok(weighted.iter().take(count).map(|(pk, _)| *pk).collect())
+        Ok(weighted.iter().take(count).map(|(pk, _)| pk.clone()).collect())
     }
 
     /// Submit a vote commitment
@@ -211,8 +211,8 @@ impl SafetyReviewManager {
         for vote in &session.votes {
             let reputation = self
                 .reputations
-                .entry(vote.reviewer)
-                .or_insert_with(|| ReviewerReputation::new(vote.reviewer));
+                .entry(vote.reviewer.clone())
+                .or_insert_with(|| ReviewerReputation::new(vote.reviewer.clone()));
 
             let was_in_majority = match consensus.decision {
                 ConsensusDecision::ApprovedStrong | ConsensusDecision::ApprovedWeak => {

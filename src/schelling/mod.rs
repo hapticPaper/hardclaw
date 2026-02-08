@@ -20,7 +20,8 @@ pub use voting::{SchellingVoting, VotingPhase, VotingRound};
 use std::collections::HashMap;
 
 use crate::crypto::PublicKey;
-use crate::types::{now_millis, Id, Timestamp, VerificationVote, VoteResult, VotingResults};
+use crate::types::{now_millis, Address, Id, Timestamp, VerificationVote, VoteResult, VotingResults};
+use crate::verifier::accuracy::{AccuracyTracker, VerificationOutcome};
 
 /// Configuration for Schelling Point consensus
 #[derive(Clone, Debug)]
@@ -60,6 +61,8 @@ pub struct SchellingConsensus {
     active_rounds: HashMap<Id, VotingRound>,
     /// Completed rounds (for history/appeals)
     completed_rounds: HashMap<Id, CompletedRound>,
+    /// Rolling accuracy tracker (replaces per-vote deviant slashing)
+    accuracy_tracker: AccuracyTracker,
 }
 
 impl Default for SchellingConsensus {
@@ -76,7 +79,19 @@ impl SchellingConsensus {
             config,
             active_rounds: HashMap::new(),
             completed_rounds: HashMap::new(),
+            accuracy_tracker: AccuracyTracker::default(),
         }
+    }
+
+    /// Get a reference to the accuracy tracker
+    #[must_use]
+    pub fn accuracy_tracker(&self) -> &AccuracyTracker {
+        &self.accuracy_tracker
+    }
+
+    /// Get a mutable reference to the accuracy tracker
+    pub fn accuracy_tracker_mut(&mut self) -> &mut AccuracyTracker {
+        &mut self.accuracy_tracker
     }
 
     /// Start a voting round for a solution
@@ -167,19 +182,36 @@ impl SchellingConsensus {
                         .majority
                         .is_some_and(|m| v != m && v != VoteResult::Abstain)
                     {
-                        return Some(*voter);
+                        return Some(voter.clone());
                     }
                 }
                 None
             })
             .collect();
 
+        // Feed accuracy tracker: each voter gets an outcome based on consensus agreement
+        let now = now_millis();
+        for (voter, vote_info) in &round.votes {
+            if let Some(v) = vote_info.vote {
+                let agreed = results.majority.is_some_and(|m| v == m);
+                let addr = Address::from_public_key(voter);
+                self.accuracy_tracker.record_outcome(
+                    &addr,
+                    VerificationOutcome {
+                        agreed_with_consensus: agreed,
+                        solution_id: *solution_id,
+                        timestamp: now,
+                    },
+                );
+            }
+        }
+
         let outcome = RoundOutcome {
             solution_id: *solution_id,
             accepted,
             results,
             deviants,
-            finalized_at: now_millis(),
+            finalized_at: now,
         };
 
         // Store completed round
@@ -295,14 +327,14 @@ mod tests {
             let vote = if i < 4 {
                 VerificationVote::commit(
                     solution_id,
-                    *voter_kp.public_key(),
+                    voter_kp.public_key().clone(),
                     VoteResult::Accept,
                     80,
                 )
             } else {
                 VerificationVote::commit(
                     solution_id,
-                    *voter_kp.public_key(),
+                    voter_kp.public_key().clone(),
                     VoteResult::Reject,
                     30,
                 )

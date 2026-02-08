@@ -79,7 +79,7 @@ impl SafetyConsensusEngine {
             // Confidence-weighted rewards
             reward *= vote.confidence;
 
-            rewards.push((vote.reviewer, reward));
+            rewards.push((vote.reviewer.clone(), reward));
         }
 
         rewards
@@ -175,9 +175,9 @@ mod tests {
                 verdict: SafetyVerdict::Safe,
                 confidence: 0.9,
                 reasoning: Some("Looks safe".to_string()),
-                reviewer: *Keypair::generate().public_key(),
+                reviewer: Keypair::generate().public_key().clone(),
                 nonce: [i; 32],
-                signature: crate::crypto::Signature::from_bytes([0; 64]),
+                signature: crate::crypto::Signature::placeholder(),
             });
         }
         votes.push(SafetyReviewVote {
@@ -185,9 +185,9 @@ mod tests {
             verdict: SafetyVerdict::Unsafe,
             confidence: 0.7,
             reasoning: Some("Suspicious".to_string()),
-            reviewer: *Keypair::generate().public_key(),
+            reviewer: Keypair::generate().public_key().clone(),
             nonce: [4; 32],
-            signature: crate::crypto::Signature::from_bytes([0; 64]),
+            signature: crate::crypto::Signature::placeholder(),
         });
 
         let consensus = engine.calculate_consensus(code_hash, votes);
@@ -203,9 +203,9 @@ mod tests {
         let engine = SafetyConsensusEngine::new();
         let code_hash = crate::crypto::Hash::from_bytes([0; 32]);
 
-        let reviewer1 = *Keypair::generate().public_key();
-        let reviewer2 = *Keypair::generate().public_key();
-        let reviewer3 = *Keypair::generate().public_key();
+        let reviewer1 = Keypair::generate().public_key().clone();
+        let reviewer2 = Keypair::generate().public_key().clone();
+        let reviewer3 = Keypair::generate().public_key().clone();
 
         let votes = vec![
             SafetyReviewVote {
@@ -215,7 +215,7 @@ mod tests {
                 reasoning: None,
                 reviewer: reviewer1,
                 nonce: [0; 32],
-                signature: crate::crypto::Signature::from_bytes([0; 64]),
+                signature: crate::crypto::Signature::placeholder(),
             },
             SafetyReviewVote {
                 code_hash,
@@ -224,7 +224,7 @@ mod tests {
                 reasoning: None,
                 reviewer: reviewer3,
                 nonce: [2; 32],
-                signature: crate::crypto::Signature::from_bytes([0; 64]),
+                signature: crate::crypto::Signature::placeholder(),
             },
             SafetyReviewVote {
                 code_hash,
@@ -233,7 +233,7 @@ mod tests {
                 reasoning: None,
                 reviewer: reviewer2,
                 nonce: [1; 32],
-                signature: crate::crypto::Signature::from_bytes([0; 64]),
+                signature: crate::crypto::Signature::placeholder(),
             },
         ];
 

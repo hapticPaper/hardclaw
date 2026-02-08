@@ -84,6 +84,11 @@ impl ProofOfVerification {
                     reason: "Subjective tasks require Schelling consensus".to_string(),
                 });
             }
+
+            VerificationSpec::SystemOperation { .. } => {
+                // System operations (genesis, airdrop, vesting) are auto-verified
+                (true, None)
+            }
         };
 
         let verification_time_ms = start.elapsed().as_millis() as u64;
@@ -92,7 +97,7 @@ impl ProofOfVerification {
         let mut result = VerificationResult::new(
             solution.id,
             job.id,
-            *verifier_keypair.public_key(),
+            verifier_keypair.public_key().clone(),
             passed,
             error,
             verification_time_ms,
@@ -269,7 +274,7 @@ impl ProofOfVerification {
         verifier_keypair: &Keypair,
     ) -> VerifierAttestation {
         let mut attestation = VerifierAttestation::new(
-            *verifier_keypair.public_key(),
+            verifier_keypair.public_key().clone(),
             block.hash,
             verified_solutions,
         );
@@ -327,7 +332,7 @@ mod tests {
 
         let mut job = JobPacket::new(
             JobType::Deterministic,
-            *requester_kp.public_key(),
+            requester_kp.public_key().clone(),
             b"input data".to_vec(),
             "Test job".to_string(),
             HclawAmount::from_hclaw(100),
@@ -337,7 +342,7 @@ mod tests {
         );
         job.signature = requester_kp.sign(&job.signing_bytes());
 
-        let mut solution = SolutionCandidate::new(job.id, *solver_kp.public_key(), output.to_vec());
+        let mut solution = SolutionCandidate::new(job.id, solver_kp.public_key().clone(), output.to_vec());
         solution.signature = solver_kp.sign(&solution.signing_bytes());
 
         (job, solution, requester_kp, solver_kp)
@@ -362,7 +367,7 @@ mod tests {
 
         // Create solution with wrong output
         let mut bad_solution =
-            SolutionCandidate::new(job.id, *solver_kp.public_key(), b"wrong output".to_vec());
+            SolutionCandidate::new(job.id, solver_kp.public_key().clone(), b"wrong output".to_vec());
         bad_solution.signature = solver_kp.sign(&bad_solution.signing_bytes());
 
         let mut pov = ProofOfVerification::new();
@@ -382,7 +387,7 @@ mod tests {
         // Create solution for different job
         let mut wrong_job_solution = SolutionCandidate::new(
             Hash::ZERO, // Wrong job ID
-            *solver_kp.public_key(),
+            solver_kp.public_key().clone(),
             b"output".to_vec(),
         );
         wrong_job_solution.signature = solver_kp.sign(&wrong_job_solution.signing_bytes());
@@ -416,14 +421,14 @@ mod tests {
         let pov = ProofOfVerification::new();
 
         // Create genesis block
-        let genesis = Block::genesis(*verifier_kp.public_key());
+        let genesis = Block::genesis(verifier_kp.public_key().clone());
 
         // Genesis should validate with 0 verifiers (special case)
         // Actually, with 0 verifiers, consensus check would fail, so we need at least 1
         // Let's add an attestation
         let mut genesis_with_attestation = genesis.clone();
         let attestation =
-            VerifierAttestation::new(*verifier_kp.public_key(), genesis.hash, Vec::new());
+            VerifierAttestation::new(verifier_kp.public_key().clone(), genesis.hash, Vec::new());
         let mut attestation = attestation;
         attestation.signature = verifier_kp.sign(&attestation.signing_bytes());
         genesis_with_attestation.add_attestation(attestation);

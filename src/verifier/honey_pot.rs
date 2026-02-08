@@ -75,7 +75,7 @@ impl HoneyPotGenerator {
         let fake_output = self.generate_fake_output(job);
 
         // Create the honey pot solution
-        let solution = SolutionCandidate::create_honey_pot(job.id, *fake_solver, fake_output);
+        let solution = SolutionCandidate::create_honey_pot(job.id, fake_solver.clone(), fake_output);
 
         // Track this honey pot
         if let Ok(mut ids) = self.generated_ids.write() {
@@ -182,7 +182,7 @@ impl HoneyPotDetector {
     pub fn record_offender(&self, miner: &PublicKey, solution_id: &Hash) {
         if self.is_honey_pot(solution_id) {
             if let Ok(mut offenders) = self.offenders.write() {
-                offenders.insert(*miner);
+                offenders.insert(miner.clone());
             }
         }
     }
@@ -201,7 +201,7 @@ impl HoneyPotDetector {
     pub fn get_offenders(&self) -> Vec<PublicKey> {
         self.offenders
             .read()
-            .map(|offenders| offenders.iter().copied().collect())
+            .map(|offenders| offenders.iter().cloned().collect())
             .unwrap_or_default()
     }
 
@@ -241,7 +241,7 @@ mod tests {
         let kp = Keypair::generate();
         JobPacket::new(
             JobType::Deterministic,
-            *kp.public_key(),
+            kp.public_key().clone(),
             b"test input".to_vec(),
             "Test job".to_string(),
             HclawAmount::from_hclaw(10),

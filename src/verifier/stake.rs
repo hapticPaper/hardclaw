@@ -9,7 +9,7 @@ use crate::crypto::Hash;
 use crate::types::{now_millis, Address, HclawAmount, Timestamp};
 
 /// Reason for slashing a verifier's stake
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SlashingReason {
     /// Approved a honey pot solution
     HoneyPotApproval {
@@ -33,12 +33,19 @@ pub enum SlashingReason {
         /// Duration offline in seconds
         offline_duration_secs: u64,
     },
+    /// Rolling accuracy fell below threshold
+    RollingAccuracyFailure {
+        /// Current accuracy (0.0 - 1.0)
+        accuracy: f64,
+        /// Slash percentage determined by accuracy tracker
+        slash_percent: u8,
+    },
 }
 
 impl SlashingReason {
     /// Get the slashing percentage for this reason
     #[must_use]
-    pub const fn slash_percentage(&self) -> u8 {
+    pub fn slash_percentage(&self) -> u8 {
         match self {
             // Honey pot approval = 100% slash (entire stake)
             Self::HoneyPotApproval { .. } => 100,
@@ -48,6 +55,8 @@ impl SlashingReason {
             Self::DoubleSigning { .. } => 100,
             // Downtime = 1% per hour (handled elsewhere)
             Self::Downtime { .. } => 1,
+            // Rolling accuracy — percentage set by accuracy tracker
+            Self::RollingAccuracyFailure { slash_percent, .. } => *slash_percent,
         }
     }
 }
@@ -139,6 +148,79 @@ pub struct SlashEvent {
     pub timestamp: Timestamp,
 }
 
+/// Configuration for dynamic min stake calculation
+#[derive(Clone, Debug)]
+pub struct DynamicStakeConfig {
+    /// Absolute floor for min stake (final tier amount)
+    pub absolute_floor: HclawAmount,
+    /// Divisor for economic formula: circulating / (verifiers * divisor)
+    pub economic_divisor: u64,
+    /// Max percentage increase per epoch (e.g., 5 = 5%)
+    pub max_increase_per_epoch_percent: u8,
+    /// Blocks per epoch for rate limiting
+    #[allow(dead_code)]
+
+    pub epoch_blocks: u64,
+}
+
+impl Default for DynamicStakeConfig {
+    fn default() -> Self {
+        Self {
+            absolute_floor: HclawAmount::from_hclaw(100),
+            economic_divisor: 5,
+            max_increase_per_epoch_percent: 5,
+            epoch_blocks: 1000,
+        }
+    }
+}
+
+impl DynamicStakeConfig {
+    /// Calculate post-bootstrap min stake with rate limiting
+    #[must_use]
+    pub fn calculate_min_stake(
+        &self,
+        circulating_supply: HclawAmount,
+        num_verifiers: u64,
+        prev_min_stake: HclawAmount,
+    ) -> HclawAmount {
+        if num_verifiers == 0 {
+            return self.absolute_floor;
+        }
+
+        // Economic formula: circulating / (verifiers * divisor)
+        let denominator = num_verifiers.saturating_mul(self.economic_divisor);
+        let economic = if denominator == 0 {
+            self.absolute_floor
+        } else {
+            HclawAmount::from_raw(circulating_supply.raw() / denominator as u128)
+        };
+
+        // Floor
+        let target = if economic < self.absolute_floor {
+            self.absolute_floor
+        } else {
+            economic
+        };
+
+        // Rate limit: can only increase by max_increase_per_epoch_percent
+        if target > prev_min_stake {
+            let max_increase = prev_min_stake
+                .raw()
+                .saturating_mul(self.max_increase_per_epoch_percent as u128)
+                / 100;
+            let max_allowed = HclawAmount::from_raw(prev_min_stake.raw().saturating_add(max_increase));
+            if target > max_allowed {
+                max_allowed
+            } else {
+                target
+            }
+        } else {
+            // Can decrease freely (never trap existing verifiers)
+            target
+        }
+    }
+}
+
 /// Manages verifier stakes
 pub struct StakeManager {
     /// Stakes by address
@@ -149,6 +231,8 @@ pub struct StakeManager {
     unbonding_period_ms: i64,
     /// Total staked across all verifiers
     total_staked: HclawAmount,
+    /// Dynamic stake configuration
+    dynamic_config: DynamicStakeConfig,
 }
 
 impl Default for StakeManager {
@@ -169,6 +253,7 @@ impl StakeManager {
             min_stake: HclawAmount::from_hclaw(1000),
             unbonding_period_ms: Self::DEFAULT_UNBONDING_PERIOD_MS,
             total_staked: HclawAmount::ZERO,
+            dynamic_config: DynamicStakeConfig::default(),
         }
     }
 
@@ -180,7 +265,32 @@ impl StakeManager {
             min_stake,
             unbonding_period_ms: Self::DEFAULT_UNBONDING_PERIOD_MS,
             total_staked: HclawAmount::ZERO,
+            dynamic_config: DynamicStakeConfig::default(),
         }
+    }
+
+    /// Get the current minimum stake
+    #[must_use]
+    pub const fn min_stake(&self) -> HclawAmount {
+        self.min_stake
+    }
+
+    /// Set the minimum stake directly (used during bootstrap to track airdrop tiers)
+    pub fn set_min_stake(&mut self, min_stake: HclawAmount) {
+        self.min_stake = min_stake;
+    }
+
+    /// Update min stake using the dynamic economic formula (post-bootstrap)
+    pub fn update_min_stake_dynamic(
+        &mut self,
+        circulating_supply: HclawAmount,
+        num_verifiers: u64,
+    ) {
+        self.min_stake = self.dynamic_config.calculate_min_stake(
+            circulating_supply,
+            num_verifiers,
+            self.min_stake,
+        );
     }
 
     /// Add stake for a verifier
@@ -414,5 +524,51 @@ mod tests {
         let amount = manager.complete_unstake(&addr).unwrap();
         assert_eq!(amount.whole_hclaw(), 100);
         assert!(manager.get_stake(&addr).is_none());
+    }
+
+    #[test]
+    fn test_dynamic_stake_config() {
+        let config = DynamicStakeConfig::default();
+
+        // With 2.35M supply / 4350 verifiers / divisor 5 → ~108 HCLAW
+        let supply = HclawAmount::from_hclaw(2_354_000);
+        let result = config.calculate_min_stake(supply, 4350, HclawAmount::from_hclaw(100));
+        assert!(result.whole_hclaw() >= 100); // At least floor
+        assert!(result.whole_hclaw() <= 120); // Close to 108
+
+        // Rate limiting: can't jump more than 5%
+        let prev = HclawAmount::from_hclaw(100);
+        let huge_supply = HclawAmount::from_hclaw(100_000_000);
+        let result = config.calculate_min_stake(huge_supply, 10, prev);
+        assert!(result.whole_hclaw() <= 105); // 5% cap from 100
+
+        // Can decrease freely
+        let prev = HclawAmount::from_hclaw(1000);
+        let small_supply = HclawAmount::from_hclaw(10_000);
+        let result = config.calculate_min_stake(small_supply, 100, prev);
+        assert!(result.whole_hclaw() < 1000); // Should decrease
+    }
+
+    #[test]
+    fn test_rolling_accuracy_slash() {
+        let mut manager = StakeManager::new();
+        let addr = test_address();
+
+        manager.stake(addr, HclawAmount::from_hclaw(1000)).unwrap();
+
+        // Slash for rolling accuracy failure (2%)
+        let slashed = manager
+            .slash(
+                &addr,
+                SlashingReason::RollingAccuracyFailure {
+                    accuracy: 0.55,
+                    slash_percent: 2,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(slashed.whole_hclaw(), 20); // 2% of 1000
+        let stake = manager.get_stake(&addr).unwrap();
+        assert!(stake.is_active); // Not deactivated at 2%
     }
 }

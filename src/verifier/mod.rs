@@ -7,10 +7,12 @@
 //! Defense: The protocol injects valid-looking but *invalid* solutions (honey pots).
 //! If a miner signs a honey pot, their entire stake is slashed.
 
+pub mod accuracy;
 mod honey_pot;
 pub mod runtime;
 mod stake;
 
+pub use accuracy::{AccuracyConfig, AccuracyStatus, AccuracyTracker, SlashAction};
 pub use honey_pot::{HoneyPotDetector, HoneyPotGenerator};
 pub use runtime::{AIModelCheck, EnvironmentCheck, LanguageSupport, ValidatorCapabilities};
 pub use stake::{SlashingReason, StakeInfo, StakeManager};
@@ -76,14 +78,10 @@ impl Verifier {
             None
         };
 
+        // Block producer gets its own keypair (same identity as verifier)
+        let block_keypair = Keypair::generate();
         Self {
-            block_producer: BlockProducer::new(
-                Keypair::from_secret(
-                    crate::crypto::SecretKey::from_bytes(*keypair.public_key().as_bytes())
-                        .unwrap_or_else(|_| crate::crypto::SecretKey::generate()),
-                ),
-                config.block_config.clone(),
-            ),
+            block_producer: BlockProducer::new(block_keypair, config.block_config.clone()),
             address,
             config,
             keypair,
@@ -258,7 +256,7 @@ mod tests {
 
         let mut job = JobPacket::new(
             JobType::Deterministic,
-            *requester_kp.public_key(),
+            requester_kp.public_key().clone(),
             b"input".to_vec(),
             "Test".to_string(),
             HclawAmount::from_hclaw(10),
@@ -268,7 +266,7 @@ mod tests {
         );
         job.signature = requester_kp.sign(&job.signing_bytes());
 
-        let mut solution = SolutionCandidate::new(job.id, *solver_kp.public_key(), output.to_vec());
+        let mut solution = SolutionCandidate::new(job.id, solver_kp.public_key().clone(), output.to_vec());
         solution.signature = solver_kp.sign(&solution.signing_bytes());
 
         (job, solution)

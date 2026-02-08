@@ -1,0 +1,19 @@
+project_name: hardclaw
+services:
+- name: infra
+  path: ./.github/workflows
+- name: scripts
+  path: ./scripts
+exclude:
+- node_modules
+- dist
+- build
+- .git
+- __pycache__
+- '*.pyc'
+- .venv
+- venv
+embedding:
+  model: nomic-embed-text
+summarization:
+  fallback_model: mistral

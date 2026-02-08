@@ -307,9 +307,7 @@ impl App {
         let keypair = hardclaw::keypair_from_mnemonic(&mnemonic, "");
 
         // Create wallet from the keypair
-        let secret_bytes = keypair.secret_key().to_bytes();
-        let mut wallet =
-            Wallet::from_secret_bytes(secret_bytes).expect("valid keypair from mnemonic");
+        let mut wallet = Wallet::from_keypair(keypair);
         let address = wallet.address().to_string();
 
         match wallet.save_as_default() {

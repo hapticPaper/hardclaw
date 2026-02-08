@@ -99,6 +99,13 @@ impl SupplyManager {
         self.update_effective();
     }
 
+    /// Record tokens minted via airdrop during bootstrap
+    pub fn record_airdrop_mint(&mut self, amount: HclawAmount) {
+        self.metrics.total_minted = self.metrics.total_minted.saturating_add(amount);
+        self.metrics.circulating_supply = self.metrics.circulating_supply.saturating_add(amount);
+        self.update_effective();
+    }
+
     /// Record tokens burned
     pub fn record_burn(&mut self, amount: HclawAmount) {
         self.metrics.total_burned = self.metrics.total_burned.saturating_add(amount);

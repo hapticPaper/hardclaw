@@ -1,6 +1,7 @@
 //! Wallet management for `HardClaw`.
 //!
 //! Handles key generation, storage, and loading.
+//! Version 2 format stores ML-DSA-65 keys (4032-byte secret key, 1952-byte public key).
 
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -8,14 +9,19 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::crypto::{Keypair, PublicKey, SecretKey, Signature};
+use crate::crypto::{Keypair, PublicKey, SecretKey, Signature, SECRET_KEY_SIZE};
 use crate::types::Address;
 
-/// Wallet file format
+/// Current wallet file format version
+const WALLET_VERSION: u8 = 2;
+
+/// Wallet file format (v2: ML-DSA-65)
 #[derive(Serialize, Deserialize)]
 struct WalletFile {
-    /// Version for future compatibility
+    /// Version for compatibility (2 = ML-DSA-65)
     version: u8,
+    /// Algorithm identifier
+    algorithm: String,
     /// Public key (hex)
     public_key: String,
     /// Secret key (hex) - in production, this would be encrypted
@@ -28,8 +34,6 @@ struct WalletFile {
 
 /// A `HardClaw` wallet
 pub struct Wallet {
-    /// Secret key bytes (for persistence)
-    secret_bytes: [u8; 32],
     /// The underlying keypair
     keypair: Keypair,
     /// Wallet name/label
@@ -42,12 +46,8 @@ impl Wallet {
     /// Generate a new wallet
     #[must_use]
     pub fn generate() -> Self {
-        let secret = SecretKey::generate();
-        let secret_bytes = secret.to_bytes();
-        let keypair = Keypair::from_secret(secret);
-
+        let keypair = Keypair::generate();
         Self {
-            secret_bytes,
             keypair,
             name: None,
             path: None,
@@ -62,26 +62,19 @@ impl Wallet {
         wallet
     }
 
-    /// Create from secret key bytes
-    ///
-    /// # Errors
-    /// Returns error if bytes are invalid
-    pub fn from_secret_bytes(bytes: [u8; 32]) -> Result<Self, WalletError> {
-        let secret =
-            SecretKey::from_bytes(bytes).map_err(|e| WalletError::InvalidKey(e.to_string()))?;
-        let keypair = Keypair::from_secret(secret);
-
-        Ok(Self {
-            secret_bytes: bytes,
+    /// Create from an existing keypair
+    #[must_use]
+    pub fn from_keypair(keypair: Keypair) -> Self {
+        Self {
             keypair,
             name: None,
             path: None,
-        })
+        }
     }
 
     /// Get the public key
     #[must_use]
-    pub const fn public_key(&self) -> &PublicKey {
+    pub fn public_key(&self) -> &PublicKey {
         self.keypair.public_key()
     }
 
@@ -93,7 +86,7 @@ impl Wallet {
 
     /// Get the underlying keypair
     #[must_use]
-    pub const fn keypair(&self) -> &Keypair {
+    pub fn keypair(&self) -> &Keypair {
         &self.keypair
     }
 
@@ -116,9 +109,10 @@ impl Wallet {
         }
 
         let wallet_file = WalletFile {
-            version: 1,
+            version: WALLET_VERSION,
+            algorithm: "ml-dsa-65".to_string(),
             public_key: self.keypair.public_key().to_hex(),
-            secret_key: hex::encode(self.secret_bytes),
+            secret_key: hex::encode(self.keypair.secret_key().to_bytes()),
             name: self.name.clone(),
             created_at: crate::types::now_millis(),
         };
@@ -151,35 +145,30 @@ impl Wallet {
         let wallet_file: WalletFile = serde_json::from_str(&contents)
             .map_err(|e| WalletError::SerializationError(e.to_string()))?;
 
-        if wallet_file.version != 1 {
+        if wallet_file.version != WALLET_VERSION {
             return Err(WalletError::UnsupportedVersion(wallet_file.version));
         }
 
-        let secret_bytes_vec = hex::decode(&wallet_file.secret_key)
+        let secret_bytes = hex::decode(&wallet_file.secret_key)
             .map_err(|e| WalletError::InvalidKey(e.to_string()))?;
 
-        if secret_bytes_vec.len() != 32 {
+        if secret_bytes.len() != SECRET_KEY_SIZE {
             return Err(WalletError::InvalidKey(format!(
-                "expected 32 bytes, got {}",
-                secret_bytes_vec.len()
+                "expected {} bytes, got {}",
+                SECRET_KEY_SIZE,
+                secret_bytes.len()
             )));
         }
 
-        let mut secret_bytes = [0u8; 32];
-        secret_bytes.copy_from_slice(&secret_bytes_vec);
-
-        let secret = SecretKey::from_bytes(secret_bytes)
+        let secret = SecretKey::from_bytes(&secret_bytes)
             .map_err(|e| WalletError::InvalidKey(e.to_string()))?;
 
-        let keypair = Keypair::from_secret(secret);
+        let public = PublicKey::from_hex(&wallet_file.public_key)
+            .map_err(|e| WalletError::InvalidKey(e.to_string()))?;
 
-        // Verify public key matches
-        if keypair.public_key().to_hex() != wallet_file.public_key {
-            return Err(WalletError::InvalidKey("public key mismatch".to_string()));
-        }
+        let keypair = Keypair::from_parts(secret, public);
 
         Ok(Self {
-            secret_bytes,
             keypair,
             name: wallet_file.name,
             path: Some(path.to_path_buf()),
@@ -309,7 +298,7 @@ mod tests {
         let mut wallet = Wallet::generate_with_name("test".to_string());
         let original_pubkey = wallet.public_key().to_hex();
 
-        let path = temp_dir().join("hardclaw_test_wallet.json");
+        let path = temp_dir().join("hardclaw_test_wallet_v2.json");
         wallet.save(&path).unwrap();
 
         let loaded = Wallet::load(&path).unwrap();

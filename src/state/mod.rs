@@ -4,7 +4,11 @@
 
 use std::collections::HashMap;
 
+use tracing::info;
+
 use crate::crypto::{hash_data, merkle_root, Hash};
+use crate::genesis::bootstrap::BootstrapState;
+use crate::genesis::GenesisConfig;
 use crate::types::{Address, Block, HclawAmount, Id, JobPacket, SolutionCandidate};
 
 /// Account state
@@ -67,7 +71,9 @@ impl AccountState {
 }
 
 /// Chain state snapshot
-#[derive(Clone, Debug)]
+///
+/// Note: Custom Clone implementation creates a new empty TransactionProcessor
+/// since ContractRegistry cannot be cloned (contains trait objects)
 pub struct ChainState {
     /// Account states
     accounts: HashMap<Address, AccountState>,
@@ -83,6 +89,14 @@ pub struct ChainState {
     jobs: HashMap<Id, JobPacket>,
     /// Solutions by ID
     solutions: HashMap<Id, SolutionCandidate>,
+    /// Bootstrap state (active during the 30-day genesis period)
+    bootstrap: Option<BootstrapState>,
+    /// Chain ID
+    chain_id: Option<String>,
+    /// Contract storage (contract_address, key) -> value
+    contract_storage: HashMap<(Address, Vec<u8>), Vec<u8>>,
+    /// Contract transaction processor
+    tx_processor: crate::contracts::processor::TransactionProcessor,
 }
 
 impl Default for ChainState {
@@ -103,7 +117,59 @@ impl ChainState {
             height: 0,
             jobs: HashMap::new(),
             solutions: HashMap::new(),
+            bootstrap: None,
+            chain_id: None,
+            contract_storage: HashMap::new(),
+            tx_processor: crate::contracts::processor::TransactionProcessor::default(),
         }
+    }
+
+    /// Create state with a genesis config (initializes bootstrap)
+    #[must_use]
+    pub fn with_genesis(config: GenesisConfig) -> Self {
+        let chain_id = config.chain_id.clone();
+        let bootstrap = BootstrapState::new(config.clone());
+
+        // Optionally initialize genesis contracts
+        let tx_processor = if config.deploy_contracts {
+            crate::genesis::contracts::initialize_genesis_contracts(
+                config.bootstrap_start,
+                config.initial_voting_power,
+            )
+        } else {
+            crate::contracts::processor::TransactionProcessor::default()
+        };
+
+        Self {
+            accounts: HashMap::new(),
+            blocks: HashMap::new(),
+            height_index: HashMap::new(),
+            tip: None,
+            height: 0,
+            jobs: HashMap::new(),
+            solutions: HashMap::new(),
+            bootstrap: Some(bootstrap),
+            chain_id: Some(chain_id),
+            contract_storage: HashMap::new(),
+            tx_processor,
+        }
+    }
+
+    /// Get bootstrap state (if active)
+    #[must_use]
+    pub fn bootstrap(&self) -> Option<&BootstrapState> {
+        self.bootstrap.as_ref()
+    }
+
+    /// Get mutable bootstrap state (if active)
+    pub fn bootstrap_mut(&mut self) -> Option<&mut BootstrapState> {
+        self.bootstrap.as_mut()
+    }
+
+    /// Get chain ID
+    #[must_use]
+    pub fn chain_id(&self) -> Option<&str> {
+        self.chain_id.as_deref()
     }
 
     /// Get or create account state
@@ -166,6 +232,18 @@ impl ChainState {
                 expected: 0,
                 got: block.header.height,
             });
+        }
+
+        // Genesis block: initialize bootstrap state from config
+        if block.header.height == 0 {
+            if let Some(ref config) = block.genesis_config {
+                info!(
+                    chain_id = %config.chain_id,
+                    "Initializing bootstrap from genesis config"
+                );
+                self.chain_id = Some(config.chain_id.clone());
+                self.bootstrap = Some(BootstrapState::new(config.clone()));
+            }
         }
 
         // Store block
@@ -243,6 +321,53 @@ impl ChainState {
     #[must_use]
     pub fn get_solution(&self, id: &Id) -> Option<&SolutionCandidate> {
         self.solutions.get(id)
+    }
+
+    /// Execute a contract transaction
+    ///
+    /// This is the enforcement mechanism - verified transactions
+    /// are executed and state changes are applied atomically.
+    ///
+    /// # Errors
+    /// Returns error if execution fails
+    pub fn execute_contract(
+        &mut self,
+        contract: &dyn crate::contracts::Contract,
+        transaction: &crate::contracts::transaction::ContractTransaction,
+    ) -> Result<crate::contracts::ExecutionResult, crate::contracts::ContractError> {
+        self.tx_processor.execute_transaction(
+            contract,
+            transaction,
+            &mut self.accounts,
+            &mut self.contract_storage,
+        )
+    }
+
+    /// Verify a contract execution result
+    ///
+    /// Independent verification without modifying state.
+    ///
+    /// # Errors
+    /// Returns error if verification logic fails
+    pub fn verify_contract_execution(
+        &self,
+        contract: &dyn crate::contracts::Contract,
+        transaction: &crate::contracts::transaction::ContractTransaction,
+        result: &crate::contracts::ExecutionResult,
+    ) -> Result<bool, crate::contracts::ContractError> {
+        self.tx_processor.verify_execution(
+            contract,
+            transaction,
+            result,
+            &self.accounts,
+            &self.contract_storage,
+        )
+    }
+
+    /// Get contract storage value
+    #[must_use]
+    pub fn get_contract_storage(&self, contract: &Address, key: &[u8]) -> Option<Vec<u8>> {
+        self.contract_storage.get(&(*contract, key.to_vec())).cloned()
     }
 }
 
@@ -337,10 +462,31 @@ mod tests {
         let kp = Keypair::generate();
 
         // Apply genesis block
-        let genesis = Block::genesis(*kp.public_key());
+        let genesis = Block::genesis(kp.public_key().clone());
         state.apply_block(genesis).unwrap();
 
         assert_eq!(state.height(), 1);
         assert!(state.tip().is_some());
+    }
+}
+
+/// Custom Clone implementation
+/// Creates a new TransactionProcessor since contracts can't be cloned
+impl Clone for ChainState {
+    fn clone(&self) -> Self {
+        Self {
+            accounts: self.accounts.clone(),
+            blocks: self.blocks.clone(),
+            height_index: self.height_index.clone(),
+            tip: self.tip,
+            height: self.height,
+            jobs: self.jobs.clone(),
+            solutions: self.solutions.clone(),
+            bootstrap: self.bootstrap.clone(),
+            chain_id: self.chain_id.clone(),
+            contract_storage: self.contract_storage.clone(),
+            // Create a fresh transaction processor (contracts can't be cloned)
+            tx_processor: crate::contracts::processor::TransactionProcessor::default(),
+        }
     }
 }

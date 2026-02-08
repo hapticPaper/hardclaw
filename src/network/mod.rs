@@ -26,10 +26,10 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
-use crate::crypto::{Hash, PublicKey};
+use crate::crypto::{Hash, KemPublicKey, PublicKey};
 use crate::types::{Block, JobPacket, SolutionCandidate, VerifierAttestation};
 
-/// Protocol version string
+/// Protocol version string (base, chain ID appended at runtime)
 const PROTOCOL_VERSION: &str = "/hardclaw/1.0.0";
 
 /// Gossipsub topic for jobs
@@ -56,13 +56,13 @@ pub const BOOTSTRAP_NODES: &[&str] = &[
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum NetworkMessage {
     /// New job announcement
-    NewJob(JobPacket),
+    NewJob(Box<JobPacket>),
     /// New solution submission
-    NewSolution(SolutionCandidate),
+    NewSolution(Box<SolutionCandidate>),
     /// New block proposal
-    NewBlock(Block),
+    NewBlock(Box<Block>),
     /// Block attestation
-    Attestation(VerifierAttestation),
+    Attestation(Box<VerifierAttestation>),
     /// Request block by hash
     GetBlock(Hash),
     /// Request job by ID
@@ -74,14 +74,18 @@ pub enum NetworkMessage {
 /// Information about a peer
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PeerInfo {
-    /// Peer's public key
+    /// Peer's ML-DSA-65 signing public key
     pub public_key: PublicKey,
+    /// Peer's HQC-192 KEM public key (for PQ key exchange)
+    pub kem_public_key: Option<KemPublicKey>,
     /// Network address
     pub address: String,
     /// Whether peer is a verifier
     pub is_verifier: bool,
     /// Protocol version
     pub version: u32,
+    /// Chain ID for network isolation
+    pub chain_id: Option<String>,
 }
 
 /// Network configuration
@@ -101,6 +105,8 @@ pub struct NetworkConfig {
     pub use_official_bootstrap: bool,
     /// External address (for NAT traversal - your public IP)
     pub external_addr: Option<String>,
+    /// Chain ID for network isolation
+    pub chain_id: Option<String>,
 }
 
 impl Default for NetworkConfig {
@@ -113,6 +119,7 @@ impl Default for NetworkConfig {
             enable_mdns: true,
             use_official_bootstrap: true,
             external_addr: None,
+            chain_id: None,
         }
     }
 }
@@ -125,13 +132,13 @@ pub enum NetworkEvent {
     /// Peer disconnected
     PeerDisconnected(PeerId),
     /// Received a new job from the network
-    JobReceived(JobPacket),
+    JobReceived(Box<JobPacket>),
     /// Received a new solution from the network
-    SolutionReceived(SolutionCandidate),
+    SolutionReceived(Box<SolutionCandidate>),
     /// Received a new block from the network
-    BlockReceived(Block),
+    BlockReceived(Box<Block>),
     /// Received an attestation from the network
-    AttestationReceived(VerifierAttestation),
+    AttestationReceived(Box<VerifierAttestation>),
     /// Network started successfully
     Started {
         /// Our peer ID
@@ -246,6 +253,12 @@ impl NetworkNode {
         // Create event channel
         let (event_tx, event_rx) = mpsc::channel(1000);
 
+        // Build protocol version with chain ID for network isolation
+        let protocol_version = match &config.chain_id {
+            Some(chain_id) => format!("{}/{}", PROTOCOL_VERSION, chain_id),
+            None => PROTOCOL_VERSION.to_string(),
+        };
+
         // Build the swarm with the provided identity
         let swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
             .with_tokio()
@@ -264,9 +277,9 @@ impl NetworkNode {
                 let mut kademlia = kad::Behaviour::new(peer_id, store);
                 kademlia.set_mode(Some(Mode::Server));
 
-                // Configure Identify protocol
+                // Configure Identify protocol (includes chain ID for isolation)
                 let identify = identify::Behaviour::new(identify::Config::new(
-                    PROTOCOL_VERSION.to_string(),
+                    protocol_version.clone(),
                     key.public(),
                 ));
 
@@ -519,6 +532,22 @@ impl NetworkNode {
                     protocol_version = %info.protocol_version,
                     "Received identify info from peer"
                 );
+
+                // Check chain ID compatibility — disconnect peers on different chains
+                if let Some(ref our_chain_id) = self.config.chain_id {
+                    let expected_suffix = format!("/{}", our_chain_id);
+                    if !info.protocol_version.ends_with(&expected_suffix) {
+                        warn!(
+                            peer = %peer_id,
+                            their_version = %info.protocol_version,
+                            our_chain = %our_chain_id,
+                            "Disconnecting peer on different chain"
+                        );
+                        let _ = self.swarm.disconnect_peer_id(peer_id);
+                        return;
+                    }
+                }
+
                 // Add all peer addresses to Kademlia
                 for addr in info.listen_addrs {
                     self.swarm
@@ -638,7 +667,7 @@ impl NetworkNode {
             TOPIC_JOBS => {
                 if let Ok(job) = bincode::deserialize::<JobPacket>(&message.data) {
                     debug!(job_id = %job.id, "Received job from network");
-                    let _ = self.event_tx.send(NetworkEvent::JobReceived(job)).await;
+                    let _ = self.event_tx.send(NetworkEvent::JobReceived(Box::new(job))).await;
                 } else {
                     warn!("Failed to deserialize job message");
                 }
@@ -648,7 +677,7 @@ impl NetworkNode {
                     debug!(solution_id = %solution.id, "Received solution from network");
                     let _ = self
                         .event_tx
-                        .send(NetworkEvent::SolutionReceived(solution))
+                        .send(NetworkEvent::SolutionReceived(Box::new(solution)))
                         .await;
                 } else {
                     warn!("Failed to deserialize solution message");
@@ -657,7 +686,7 @@ impl NetworkNode {
             TOPIC_BLOCKS => {
                 if let Ok(block) = bincode::deserialize::<Block>(&message.data) {
                     debug!(block_hash = %block.hash, height = block.header.height, "Received block from network");
-                    let _ = self.event_tx.send(NetworkEvent::BlockReceived(block)).await;
+                    let _ = self.event_tx.send(NetworkEvent::BlockReceived(Box::new(block))).await;
                 } else {
                     warn!("Failed to deserialize block message");
                 }
@@ -668,7 +697,7 @@ impl NetworkNode {
                     debug!(block_hash = %attestation.block_hash, "Received attestation from network");
                     let _ = self
                         .event_tx
-                        .send(NetworkEvent::AttestationReceived(attestation))
+                        .send(NetworkEvent::AttestationReceived(Box::new(attestation)))
                         .await;
                 } else {
                     warn!("Failed to deserialize attestation message");
@@ -904,10 +933,12 @@ mod tests {
         let config = NetworkConfig::default();
         let keypair = crate::crypto::Keypair::generate();
         let peer_info = PeerInfo {
-            public_key: *keypair.public_key(),
+            public_key: keypair.public_key().clone(),
+            kem_public_key: None,
             address: "/ip4/127.0.0.1/tcp/9000".to_string(),
             is_verifier: true,
             version: 1,
+            chain_id: None,
         };
 
         let result = NetworkNode::new(config, peer_info);
@@ -920,9 +951,9 @@ mod tests {
     #[test]
     fn test_message_serialization() {
         let keypair = crate::crypto::Keypair::generate();
-        let block = Block::genesis(*keypair.public_key());
+        let block = Block::genesis(keypair.public_key().clone());
 
-        let msg = NetworkMessage::NewBlock(block.clone());
+        let msg = NetworkMessage::NewBlock(Box::new(block.clone()));
         let serialized = bincode::serialize(&msg).unwrap();
         let deserialized: NetworkMessage = bincode::deserialize(&serialized).unwrap();
 

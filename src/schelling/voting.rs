@@ -89,7 +89,8 @@ impl VotingRound {
         }
 
         // Store only the public commitment (no revealed values)
-        self.votes.insert(vote.voter, vote.public_commitment());
+        let voter = vote.voter.clone();
+        self.votes.insert(voter, vote.public_commitment());
         Ok(())
     }
 
@@ -237,7 +238,7 @@ mod tests {
 
         // Commit
         let vote =
-            VerificationVote::commit(Hash::ZERO, *voter.public_key(), VoteResult::Accept, 85);
+            VerificationVote::commit(Hash::ZERO, voter.public_key().clone(), VoteResult::Accept, 85);
         let nonce = vote.nonce.unwrap();
 
         round.add_commitment(vote).unwrap();
@@ -259,9 +260,9 @@ mod tests {
         let voter = Keypair::generate();
 
         let first_vote =
-            VerificationVote::commit(Hash::ZERO, *voter.public_key(), VoteResult::Accept, 85);
+            VerificationVote::commit(Hash::ZERO, voter.public_key().clone(), VoteResult::Accept, 85);
         let second_vote =
-            VerificationVote::commit(Hash::ZERO, *voter.public_key(), VoteResult::Reject, 30);
+            VerificationVote::commit(Hash::ZERO, voter.public_key().clone(), VoteResult::Reject, 30);
 
         round.add_commitment(first_vote).unwrap();
         assert!(matches!(
@@ -284,7 +285,7 @@ mod tests {
             };
 
             let vote =
-                VerificationVote::commit(Hash::ZERO, *voter.public_key(), vote_result, quality);
+                VerificationVote::commit(Hash::ZERO, voter.public_key().clone(), vote_result, quality);
             let nonce = vote.nonce.unwrap();
             round.add_commitment(vote).unwrap();
 

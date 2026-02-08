@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{now_millis, Id, Timestamp, VerificationResult};
 use crate::crypto::{hash_data, merkle_root, Hash, PublicKey, Signature};
+use crate::genesis::GenesisConfig;
 
 /// Block header containing metadata and commitments
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -68,7 +69,7 @@ impl VerifierAttestation {
             verifier,
             block_hash,
             verified_solutions,
-            signature: Signature::from_bytes([0u8; 64]),
+            signature: Signature::placeholder(),
         }
     }
 
@@ -108,6 +109,8 @@ pub struct Block {
     pub attestations: Vec<VerifierAttestation>,
     /// Proposer's signature over the block
     pub proposer_signature: Signature,
+    /// Genesis config (only present in the genesis block)
+    pub genesis_config: Option<GenesisConfig>,
 }
 
 impl Block {
@@ -141,7 +144,8 @@ impl Block {
             hash,
             verifications,
             attestations: Vec::new(),
-            proposer_signature: Signature::from_bytes([0u8; 64]),
+            proposer_signature: Signature::placeholder(),
+            genesis_config: None,
         }
     }
 
@@ -149,6 +153,22 @@ impl Block {
     #[must_use]
     pub fn genesis(proposer: PublicKey) -> Self {
         Self::new(0, Hash::ZERO, proposer, Vec::new(), Hash::ZERO)
+    }
+
+    /// Create the genesis block with a genesis config
+    #[must_use]
+    pub fn genesis_with_config(proposer: PublicKey, config: GenesisConfig) -> Self {
+        let mut block = Self::new(0, Hash::ZERO, proposer, Vec::new(), Hash::ZERO);
+        block.genesis_config = Some(config);
+        // Recompute hash to include genesis config commitment
+        let config_hash = hash_data(
+            &bincode::serialize(&block.genesis_config).unwrap_or_default(),
+        );
+        let mut data = Vec::new();
+        data.extend_from_slice(block.hash.as_bytes());
+        data.extend_from_slice(config_hash.as_bytes());
+        block.hash = hash_data(&data);
+        block
     }
 
     /// Compute the merkle root of solutions
@@ -262,7 +282,7 @@ mod tests {
     #[test]
     fn test_genesis_block() {
         let kp = Keypair::generate();
-        let genesis = Block::genesis(*kp.public_key());
+        let genesis = Block::genesis(kp.public_key().clone());
 
         assert_eq!(genesis.header.height, 0);
         assert_eq!(genesis.header.parent_hash, Hash::ZERO);
@@ -271,7 +291,7 @@ mod tests {
     #[test]
     fn test_block_hash_deterministic() {
         let kp = Keypair::generate();
-        let block = Block::new(1, Hash::ZERO, *kp.public_key(), Vec::new(), Hash::ZERO);
+        let block = Block::new(1, Hash::ZERO, kp.public_key().clone(), Vec::new(), Hash::ZERO);
 
         let computed = block.header.compute_hash();
         assert_eq!(computed, block.hash);
@@ -280,7 +300,7 @@ mod tests {
     #[test]
     fn test_consensus_threshold() {
         let kp = Keypair::generate();
-        let mut block = Block::new(1, Hash::ZERO, *kp.public_key(), Vec::new(), Hash::ZERO);
+        let mut block = Block::new(1, Hash::ZERO, kp.public_key().clone(), Vec::new(), Hash::ZERO);
 
         // With 10 verifiers, need 7 (66% rounded up)
         assert!(!block.has_consensus(10));
@@ -289,7 +309,7 @@ mod tests {
         for _ in 0..7 {
             let verifier_kp = Keypair::generate();
             let mut attestation =
-                VerifierAttestation::new(*verifier_kp.public_key(), block.hash, Vec::new());
+                VerifierAttestation::new(verifier_kp.public_key().clone(), block.hash, Vec::new());
             attestation.signature = verifier_kp.sign(&attestation.signing_bytes());
             block.add_attestation(attestation);
         }
@@ -300,7 +320,7 @@ mod tests {
     #[test]
     fn test_block_integrity() {
         let kp = Keypair::generate();
-        let block = Block::new(1, Hash::ZERO, *kp.public_key(), Vec::new(), Hash::ZERO);
+        let block = Block::new(1, Hash::ZERO, kp.public_key().clone(), Vec::new(), Hash::ZERO);
 
         assert!(block.verify_integrity().is_ok());
     }

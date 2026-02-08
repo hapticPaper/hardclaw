@@ -72,9 +72,9 @@ impl AIReviewer {
             verdict,
             confidence,
             reasoning: Some(reasoning),
-            reviewer: *self.keypair.public_key(),
+            reviewer: self.keypair.public_key().clone(),
             nonce,
-            signature: crate::crypto::Signature::from_bytes([0; 64]),
+            signature: crate::crypto::Signature::placeholder(),
         };
 
         // Sign the vote

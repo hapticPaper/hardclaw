@@ -129,7 +129,7 @@ impl BlockProducer {
         let mut block = Block::new(
             self.current_height + 1,
             self.current_parent,
-            *self.keypair.public_key(),
+            self.keypair.public_key().clone(),
             verifications,
             state_root,
         );
@@ -198,7 +198,7 @@ mod tests {
 
         let mut job = JobPacket::new(
             JobType::Deterministic,
-            *requester_kp.public_key(),
+            requester_kp.public_key().clone(),
             b"input".to_vec(),
             "Test".to_string(),
             HclawAmount::from_hclaw(10),
@@ -208,7 +208,7 @@ mod tests {
         );
         job.signature = requester_kp.sign(&job.signing_bytes());
 
-        let mut solution = SolutionCandidate::new(job.id, *solver_kp.public_key(), output.to_vec());
+        let mut solution = SolutionCandidate::new(job.id, solver_kp.public_key().clone(), output.to_vec());
         solution.signature = solver_kp.sign(&solution.signing_bytes());
 
         (job, solution)
@@ -255,7 +255,7 @@ mod tests {
         // Create bad solution
         let solver_kp = Keypair::generate();
         let mut bad_solution =
-            SolutionCandidate::new(job.id, *solver_kp.public_key(), b"wrong output".to_vec());
+            SolutionCandidate::new(job.id, solver_kp.public_key().clone(), b"wrong output".to_vec());
         bad_solution.signature = solver_kp.sign(&bad_solution.signing_bytes());
 
         // Verify - should succeed but not pass

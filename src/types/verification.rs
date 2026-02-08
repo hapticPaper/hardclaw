@@ -45,7 +45,7 @@ impl VerificationResult {
             error,
             verification_time_ms,
             verified_at: now_millis(),
-            signature: Signature::from_bytes([0u8; 64]),
+            signature: Signature::placeholder(),
         }
     }
 
@@ -149,7 +149,7 @@ impl VerificationVote {
             quality_score: Some(quality_score),
             committed_at: now_millis(),
             revealed_at: None,
-            signature: Signature::from_bytes([0u8; 64]),
+            signature: Signature::placeholder(),
         }
     }
 
@@ -158,14 +158,14 @@ impl VerificationVote {
     pub fn public_commitment(&self) -> Self {
         Self {
             solution_id: self.solution_id,
-            voter: self.voter,
+            voter: self.voter.clone(),
             commitment: self.commitment,
             vote: None,
             nonce: None,
             quality_score: None,
             committed_at: self.committed_at,
             revealed_at: None,
-            signature: self.signature,
+            signature: self.signature.clone(),
         }
     }
 
@@ -302,7 +302,7 @@ mod tests {
         let kp = Keypair::generate();
         let solution_id = Hash::ZERO;
 
-        let vote = VerificationVote::commit(solution_id, *kp.public_key(), VoteResult::Accept, 85);
+        let vote = VerificationVote::commit(solution_id, kp.public_key().clone(), VoteResult::Accept, 85);
 
         assert!(vote.is_revealed());
 
@@ -326,7 +326,7 @@ mod tests {
         let kp = Keypair::generate();
         let solution_id = Hash::ZERO;
 
-        let vote = VerificationVote::commit(solution_id, *kp.public_key(), VoteResult::Accept, 85);
+        let vote = VerificationVote::commit(solution_id, kp.public_key().clone(), VoteResult::Accept, 85);
 
         let mut public = vote.public_commitment();
 
@@ -349,7 +349,7 @@ mod tests {
                 let kp = Keypair::generate();
                 VerificationVote::commit(
                     solution_id,
-                    *kp.public_key(),
+                    kp.public_key().clone(),
                     if i < 3 {
                         VoteResult::Accept
                     } else {
