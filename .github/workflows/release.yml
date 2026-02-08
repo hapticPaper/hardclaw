@@ -21,11 +21,12 @@ jobs:
       matrix:
         include:
           # Linux (glibc only - V8/deno_core doesn't have musl prebuilts)
+          # Using ubuntu-20.04 for GLIBC 2.31 compatibility with older production servers
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-20.04
             artifact_name: hardclaw-linux-x86_64
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-20.04
             artifact_name: hardclaw-linux-aarch64
           
           # macOS
