@@ -639,7 +639,7 @@ impl App {
                 .border_style(Style::default().fg(Color::Cyan)),
         );
 
-        frame.render_widget(paragraph, centered_rect(60, 60, area));
+        frame.render_widget(paragraph, centered_rect(75, 60, area));
     }
 
     fn render_wallet_created(
@@ -769,7 +769,7 @@ impl App {
                 .border_style(Style::default().fg(Color::Cyan)),
         );
 
-        frame.render_widget(paragraph, centered_rect(60, 50, area));
+        frame.render_widget(paragraph, centered_rect(75, 50, area));
     }
 
     fn render_wallet_loaded(&self, frame: &mut Frame, area: Rect, address: &str) {
@@ -801,7 +801,7 @@ impl App {
                 .border_style(Style::default().fg(Color::Green)),
         );
 
-        frame.render_widget(paragraph, centered_rect(60, 40, area));
+        frame.render_widget(paragraph, centered_rect(75, 40, area));
     }
 
     fn render_environment_selection(
@@ -1185,7 +1185,7 @@ impl App {
                 .border_style(Style::default().fg(Color::Cyan)),
         );
 
-        frame.render_widget(paragraph, centered_rect(60, 30, area));
+        frame.render_widget(paragraph, centered_rect(75, 30, area));
     }
 
     fn render_environment_checked(
