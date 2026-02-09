@@ -9,8 +9,9 @@ use std::collections::HashMap;
 use tracing::{debug, error, info};
 
 use super::{Contract, ContractError, ContractResult, ExecutionResult};
+use crate::contracts::loader::{ContractLoader, UniversalLoader};
 use crate::contracts::state::ContractState;
-use crate::contracts::transaction::ContractTransaction;
+use crate::contracts::transaction::{ContractTransaction, TransactionKind};
 use crate::state::AccountState;
 use crate::types::Address;
 
@@ -20,6 +21,8 @@ pub struct TransactionProcessor {
     max_gas: u64,
     /// Contract registry for looking up contracts
     registry: crate::contracts::ContractRegistry,
+    /// Contract loader for deploying new contracts
+    loader: Box<dyn ContractLoader>,
 }
 
 impl TransactionProcessor {
@@ -29,18 +32,112 @@ impl TransactionProcessor {
         Self {
             max_gas,
             registry: crate::contracts::ContractRegistry::new(),
+            loader: Box::new(UniversalLoader::new()),
         }
     }
 
     /// Create transaction processor with pre-configured registry
     #[must_use]
     pub fn with_registry(max_gas: u64, registry: crate::contracts::ContractRegistry) -> Self {
-        Self { max_gas, registry }
+        Self {
+            max_gas,
+            registry,
+            loader: Box::new(UniversalLoader::new()),
+        }
     }
 
     /// Get reference to contract registry
     pub fn registry(&self) -> &crate::contracts::ContractRegistry {
         &self.registry
+    }
+
+    /// Process a transaction of any kind
+    pub fn process_transaction(
+        &mut self,
+        kind: &TransactionKind,
+        accounts: &mut HashMap<Address, AccountState>,
+        storage: &mut HashMap<(Address, Vec<u8>), Vec<u8>>,
+    ) -> ContractResult<ExecutionResult> {
+        match kind {
+            TransactionKind::Deploy {
+                code,
+                init_data,
+                deployer,
+            } => {
+                // Computed ID - hash the code + deployer + nonce (TODO: nonce handling)
+                // For now, simple hash
+                use crate::crypto::hash_data;
+                let mut data = Vec::new();
+                data.extend_from_slice(code);
+                data.extend_from_slice(deployer.as_bytes());
+                // In a real system we need nonce to prevent replay/collision
+                // but let's assume code hash is unique enough for now or pre-computed elsewhere
+                let contract_id = hash_data(&data);
+
+                // Load contract
+                let contract = self.loader.load(contract_id, code)?;
+
+                // Execute on_deploy to initialize contract state
+                // This happens in a temporary state wrapper that gets committed on success
+                // Note: We need a contract state wrapper here.
+                // Re-use logic from execute_transaction concept but specialized for deploy
+
+                // Create contract state wrapper
+                let mut state = ContractState::new(accounts, storage);
+
+                // Execute on_deploy
+                if let Err(e) = contract.on_deploy(&mut state, init_data) {
+                    error!("Contract deployment failed in on_deploy: {}", e);
+                    state.rollback();
+                    // Remove from registry if initialization failed
+                    // (Actually we need to rollback registry too? Registry is in-memory for this processor?)
+                    // The registry in processor is used for lookups. If we fail, we shouldn't have registered it?
+                    // Yes, we registered it above. We should unregister or modify flow.
+                    // But registry is `self.registry`.
+                    // Ideally we register AFTER success, but `on_deploy` might need `self` to be registered?
+                    // Usually `on_deploy` only needs state access.
+                    // So let's register AFTER success to be safe.
+                    // BUT memory rollback on `self.registry` is tricky.
+                    // Let's assume `registry` is persistent across blocks? No, it's rebuilt or loaded.
+                    // For now, let's just use the fact that `state.commit()` hasn't happened yet.
+                    return Err(e);
+                }
+
+                // Commit state changes
+                state.commit();
+
+                // Register contract
+                self.registry.register(contract);
+                info!("Deployed contract {}", contract_id);
+
+                Ok(ExecutionResult {
+                    new_state_root: state.compute_state_root(),
+                    gas_used: 0, // TODO: Charge gas for deployment
+                    events: state.events().to_vec(),
+                    output: vec![],
+                })
+            }
+            TransactionKind::Execute(tx) => {
+                let contract = self.registry.get(&tx.contract_id).ok_or_else(|| {
+                    ContractError::ExecutionFailed(format!(
+                        "Contract not found: {}",
+                        tx.contract_id
+                    ))
+                })?;
+
+                self.execute_transaction(contract, tx, accounts, storage)
+            }
+            TransactionKind::Upgrade {
+                contract_id: _,
+                new_code: _,
+                upgrader: _,
+            } => {
+                // TODO: Check permissions
+                Err(ContractError::ExecutionFailed(
+                    "Upgrades not implemented yet".to_string(),
+                ))
+            }
+        }
     }
 
     /// Execute a contract transaction

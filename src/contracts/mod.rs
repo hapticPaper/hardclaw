@@ -23,9 +23,11 @@
 
 pub mod genesis_bounty;
 pub mod governance;
+pub mod loader;
 pub mod processor;
 pub mod state;
 pub mod transaction;
+pub mod wasm;
 
 use crate::crypto::Hash;
 use crate::types::{HclawAmount, Id};
@@ -83,7 +85,9 @@ pub trait Contract: Send + Sync {
     }
 
     /// Hook called when contract is deployed
-    fn on_deploy(&self, _state: &mut ContractState<'_>) -> ContractResult<()> {
+    ///
+    /// This is where the initial contract state is set up.
+    fn on_deploy(&self, _state: &mut ContractState<'_>, _init_data: &[u8]) -> ContractResult<()> {
         Ok(())
     }
 }

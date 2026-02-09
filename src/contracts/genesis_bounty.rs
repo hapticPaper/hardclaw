@@ -6,9 +6,11 @@
 //! - Parabolic daily bounty payouts
 //! - Slot machine block winner selection
 //! - Proportional reward distribution
+//!
+//! All mutable state is persisted in `ContractState` storage so that it
+//! survives across calls (the `Contract::execute` trait method takes `&self`).
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 use crate::contracts::state::ContractState;
 use crate::contracts::transaction::ContractTransaction;
@@ -17,7 +19,31 @@ use crate::crypto::Hash;
 use crate::genesis::bounty::{
     distribute_bounty, is_winner_block, BountyTracker, BOUNTY_DAYS, MIN_PUBLIC_NODES,
 };
+use crate::genesis::DnsBreakGlassConfig;
 use crate::types::{Address, HclawAmount};
+
+/// Genesis configuration passed in init_data
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenesisDeploymentConfig {
+    /// Airdrop amount per participant
+    pub airdrop_amount: HclawAmount,
+    /// Maximum participants allowed
+    pub max_participants: u32,
+    /// Pre-approved addresses (skip competency/stake)
+    pub pre_approved: Vec<Address>,
+    /// DNS break-glass configuration
+    pub dns_break_glass: DnsBreakGlassConfig,
+    /// Bootstrap period end timestamp
+    pub bootstrap_end: u64,
+}
+
+// ── Storage keys ────────────────────────────────────────────────────────────
+
+const KEY_CONFIG: &[u8] = b"config";
+const KEY_PARTICIPANT_COUNT: &[u8] = b"participant_count";
+const KEY_BOUNTY_TRACKER: &[u8] = b"bounty_tracker";
+/// Prefix for per-participant records: "participant:<hex address>"
+const PARTICIPANT_PREFIX: &str = "participant:";
 
 /// Genesis bounty contract ID (deterministic hash of contract name)
 pub const GENESIS_BOUNTY_CONTRACT_ID: Hash = Hash::from_bytes([
@@ -44,7 +70,7 @@ pub enum BountyAction {
     },
     /// Claim daily bounty for a winning block
     ClaimBounty {
-        /// Bootstrap day (0-29)
+        /// Bootstrap day (0-89)
         day: u8,
         /// Block hash used for randomness
         block_hash: Hash,
@@ -73,75 +99,149 @@ pub struct Participant {
     pub joined_at: u64,
 }
 
-/// Genesis bounty contract
+/// Genesis bounty contract — fully storage-backed.
+///
+/// The struct itself is stateless (only holds the fixed contract ID).
+/// All mutable state lives in `ContractState` storage so it persists
+/// across calls.
+#[derive(Clone)]
 pub struct GenesisBountyContract {
     /// Contract ID
     id: Hash,
-    /// Bounty tracker
-    bounty_tracker: BountyTracker,
-    /// Participants by address
-    participants: HashMap<Address, Participant>,
-    /// Total participants
-    participant_count: usize,
 }
 
 impl GenesisBountyContract {
     /// Create new genesis bounty contract
     #[must_use]
-    pub fn new(start_time: i64) -> Self {
+    pub fn new(_start_time: i64) -> Self {
         Self {
             id: GENESIS_BOUNTY_CONTRACT_ID,
-            bounty_tracker: BountyTracker::new(start_time),
-            participants: HashMap::new(),
-            participant_count: 0,
         }
     }
 
-    /// Parse action from transaction input
-    fn parse_action(input: &[u8]) -> ContractResult<BountyAction> {
-        bincode::deserialize(input).map_err(|e| {
-            ContractError::InvalidTransaction(format!("Failed to parse action: {}", e))
+    /// Deterministic address derived from the contract ID
+    fn address(&self) -> Address {
+        let mut bytes = [0u8; 20];
+        bytes.copy_from_slice(&self.id.as_bytes()[..20]);
+        Address::from_bytes(bytes)
+    }
+
+    // ── Storage helpers ─────────────────────────────────────────────────
+
+    fn load_config(&self, state: &ContractState<'_>) -> ContractResult<GenesisDeploymentConfig> {
+        let data = state
+            .storage_read(&self.address(), KEY_CONFIG)
+            .ok_or_else(|| {
+                ContractError::ExecutionFailed("Contract not initialized".to_string())
+            })?;
+        bincode::deserialize(&data).map_err(|e| {
+            ContractError::ExecutionFailed(format!("Config deserialization failed: {e}"))
         })
     }
 
-    /// Execute join genesis action
+    fn load_participant_count(&self, state: &ContractState<'_>) -> usize {
+        state
+            .storage_read(&self.address(), KEY_PARTICIPANT_COUNT)
+            .and_then(|d| bincode::deserialize::<usize>(&d).ok())
+            .unwrap_or(0)
+    }
+
+    fn save_participant_count(&self, state: &mut ContractState<'_>, count: usize) {
+        let data = bincode::serialize(&count).expect("serialize usize");
+        state.storage_write(self.address(), KEY_PARTICIPANT_COUNT.to_vec(), data);
+    }
+
+    fn participant_key(sender: &Address) -> Vec<u8> {
+        format!("{}{}", PARTICIPANT_PREFIX, hex::encode(sender.as_bytes())).into_bytes()
+    }
+
+    fn load_participant(&self, state: &ContractState<'_>, sender: &Address) -> Option<Participant> {
+        let key = Self::participant_key(sender);
+        state
+            .storage_read(&self.address(), &key)
+            .and_then(|d| bincode::deserialize(&d).ok())
+    }
+
+    fn save_participant(
+        &self,
+        state: &mut ContractState<'_>,
+        participant: &Participant,
+    ) -> ContractResult<()> {
+        let key = Self::participant_key(&participant.address);
+        let data = bincode::serialize(participant)
+            .map_err(|e| ContractError::ExecutionFailed(format!("Serialization failed: {e}")))?;
+        state.storage_write(self.address(), key, data);
+        Ok(())
+    }
+
+    fn load_bounty_tracker(&self, state: &ContractState<'_>) -> BountyTracker {
+        state
+            .storage_read(&self.address(), KEY_BOUNTY_TRACKER)
+            .and_then(|d| bincode::deserialize::<BountyTracker>(&d).ok())
+            .unwrap_or_else(|| BountyTracker::new(0))
+    }
+
+    fn save_bounty_tracker(
+        &self,
+        state: &mut ContractState<'_>,
+        tracker: &BountyTracker,
+    ) -> ContractResult<()> {
+        let data = bincode::serialize(tracker)
+            .map_err(|e| ContractError::ExecutionFailed(format!("Serialization failed: {e}")))?;
+        state.storage_write(self.address(), KEY_BOUNTY_TRACKER.to_vec(), data);
+        Ok(())
+    }
+
+    // ── Action handlers ─────────────────────────────────────────────────
+
+    fn parse_action(input: &[u8]) -> ContractResult<BountyAction> {
+        bincode::deserialize(input)
+            .map_err(|e| ContractError::InvalidTransaction(format!("Failed to parse action: {e}")))
+    }
+
     fn execute_join(
-        &mut self,
-        contract_state: &mut ContractState<'_>,
+        &self,
+        state: &mut ContractState<'_>,
         sender: Address,
         stake_amount: HclawAmount,
     ) -> ContractResult<()> {
-        // Check not already joined
-        if self.participants.contains_key(&sender) {
+        let config = self.load_config(state)?;
+
+        // Check not already joined (via storage lookup)
+        if self.load_participant(state, &sender).is_some() {
             return Err(ContractError::ExecutionFailed(
                 "Already joined genesis".to_string(),
             ));
         }
 
         // Check participant limit
-        if self.participant_count >= MAX_PARTICIPANTS {
+        let participant_count = self.load_participant_count(state);
+        if participant_count >= config.max_participants as usize {
             return Err(ContractError::ExecutionFailed(
                 "Maximum participants reached".to_string(),
             ));
         }
 
-        // Validate stake
-        let min_stake = HclawAmount::from_hclaw(MIN_STAKE);
-        if stake_amount < min_stake {
-            return Err(ContractError::ExecutionFailed(format!(
-                "Stake {} below minimum {}",
-                stake_amount, min_stake
-            )));
+        // Validate stake (skip for pre-approved users)
+        let is_pre_approved = config.pre_approved.contains(&sender);
+
+        if !is_pre_approved {
+            let min_stake = HclawAmount::from_hclaw(MIN_STAKE);
+            if stake_amount < min_stake {
+                return Err(ContractError::ExecutionFailed(format!(
+                    "Stake {} below minimum {}",
+                    stake_amount, min_stake
+                )));
+            }
+            // Debit stake from participant
+            state.debit(sender, stake_amount)?;
         }
 
-        // Debit stake from participant
-        contract_state.debit(sender, stake_amount)?;
+        // Credit airdrop
+        let airdrop = config.airdrop_amount;
+        state.credit(sender, airdrop);
 
-        // Credit airdrop to participant
-        let airdrop = HclawAmount::from_hclaw(AIRDROP_AMOUNT);
-        contract_state.credit(sender, airdrop);
-
-        // Store participant data
+        // Persist participant
         let participant = Participant {
             address: sender,
             stake: stake_amount,
@@ -149,24 +249,12 @@ impl GenesisBountyContract {
             bounties_earned: HclawAmount::ZERO,
             joined_at: crate::types::now_millis() as u64,
         };
-
-        let participant_key = format!("participant:{}", hex::encode(sender.as_bytes()));
-        let participant_data = bincode::serialize(&participant)
-            .map_err(|e| ContractError::ExecutionFailed(format!("Serialization failed: {}", e)))?;
-
-        contract_state.storage_write(
-            sender,
-            participant_key.as_bytes().to_vec(),
-            participant_data,
-        );
-
-        // Update participant count
-        self.participants.insert(sender, participant);
-        self.participant_count += 1;
+        self.save_participant(state, &participant)?;
+        self.save_participant_count(state, participant_count + 1);
 
         // Emit event
         let event_data = bincode::serialize(&(sender, stake_amount)).unwrap();
-        contract_state.emit_event(crate::contracts::ContractEvent {
+        state.emit_event(crate::contracts::ContractEvent {
             contract_id: self.id,
             topic: "ParticipantJoined".to_string(),
             data: event_data,
@@ -175,15 +263,13 @@ impl GenesisBountyContract {
         Ok(())
     }
 
-    /// Execute claim bounty action
     fn execute_claim(
-        &mut self,
+        &self,
         state: &mut ContractState<'_>,
         day: u8,
         block_hash: Hash,
         contributors: Vec<(Address, u32)>,
     ) -> ContractResult<()> {
-        // Validate day
         if day >= BOUNTY_DAYS {
             return Err(ContractError::ExecutionFailed(format!(
                 "Day {} out of range",
@@ -191,11 +277,12 @@ impl GenesisBountyContract {
             )));
         }
 
-        // Check bounties are active
-        if !self.bounty_tracker.is_active() {
+        let mut tracker = self.load_bounty_tracker(state);
+
+        if !tracker.is_active() {
             return Err(ContractError::ExecutionFailed(format!(
                 "Bounties not active (need {} public nodes, have {})",
-                MIN_PUBLIC_NODES, self.bounty_tracker.public_node_count
+                MIN_PUBLIC_NODES, tracker.public_node_count
             )));
         }
 
@@ -207,8 +294,7 @@ impl GenesisBountyContract {
             ));
         }
 
-        // Get remaining budget for today
-        let remaining = self.bounty_tracker.remaining_today(day);
+        let remaining = tracker.remaining_today(day);
         if remaining.raw() == 0 {
             return Err(ContractError::ExecutionFailed(
                 "No remaining budget for today".to_string(),
@@ -218,22 +304,22 @@ impl GenesisBountyContract {
         // Distribute bounty
         let distributions = distribute_bounty(contributors, remaining);
 
-        // Apply distributions
+        // Apply distributions and update participant records
+        let mut total_distributed = HclawAmount::ZERO;
         for (addr, amount) in &distributions {
             state.credit(*addr, *amount);
+            total_distributed = total_distributed.saturating_add(*amount);
 
-            // Update participant bounties earned
-            if let Some(participant) = self.participants.get_mut(addr) {
+            // Update participant bounty tally in storage
+            if let Some(mut participant) = self.load_participant(state, addr) {
                 participant.bounties_earned = participant.bounties_earned.saturating_add(*amount);
+                let _ = self.save_participant(state, &participant);
             }
         }
 
-        // Record payout
-        let mut total_distributed = HclawAmount::ZERO;
-        for (_, amount) in &distributions {
-            total_distributed = total_distributed.saturating_add(*amount);
-        }
-        self.bounty_tracker.record_payout(day, total_distributed);
+        // Record payout and persist tracker
+        tracker.record_payout(day, total_distributed);
+        self.save_bounty_tracker(state, &tracker)?;
 
         // Emit event
         let event_data = bincode::serialize(&(day, block_hash, total_distributed)).unwrap();
@@ -246,14 +332,14 @@ impl GenesisBountyContract {
         Ok(())
     }
 
-    /// Execute update node count action  
     fn execute_update_nodes(
-        &mut self,
-        _state: &mut ContractState<'_>,
+        &self,
+        state: &mut ContractState<'_>,
         count: u32,
     ) -> ContractResult<()> {
-        self.bounty_tracker.update_node_count(count);
-        Ok(())
+        let mut tracker = self.load_bounty_tracker(state);
+        tracker.update_node_count(count);
+        self.save_bounty_tracker(state, &tracker)
     }
 }
 
@@ -275,30 +361,24 @@ impl Contract for GenesisBountyContract {
         state: &mut ContractState<'_>,
         tx: &ContractTransaction,
     ) -> ContractResult<ExecutionResult> {
-        // Parse action
         let action = Self::parse_action(&tx.input)?;
 
-        // Clone self to make it mutable for execution
-        let mut contract = self.clone();
-
-        // Execute based on action
         match action {
             BountyAction::JoinGenesis { stake } => {
-                contract.execute_join(state, tx.sender_address, stake)?;
+                self.execute_join(state, tx.sender_address, stake)?;
             }
             BountyAction::ClaimBounty {
                 day,
                 block_hash,
                 contributors,
             } => {
-                contract.execute_claim(state, day, block_hash, contributors)?;
+                self.execute_claim(state, day, block_hash, contributors)?;
             }
             BountyAction::UpdateNodeCount { count } => {
-                contract.execute_update_nodes(state, count)?;
+                self.execute_update_nodes(state, count)?;
             }
         }
 
-        // Return execution result
         Ok(ExecutionResult {
             new_state_root: state.compute_state_root(),
             gas_used: 100_000, // TODO: actual gas metering
@@ -313,7 +393,6 @@ impl Contract for GenesisBountyContract {
         _tx: &ContractTransaction,
         result: &ExecutionResult,
     ) -> ContractResult<bool> {
-        // Verify state root matches
         let computed_root = state.compute_state_root();
         Ok(computed_root == result.new_state_root)
     }
@@ -321,29 +400,72 @@ impl Contract for GenesisBountyContract {
     fn is_upgradeable(&self) -> bool {
         false // Genesis contract is immutable
     }
-}
 
-impl Clone for GenesisBountyContract {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            bounty_tracker: self.bounty_tracker.clone(),
-            participants: self.participants.clone(),
-            participant_count: self.participant_count,
-        }
+    fn on_deploy(&self, state: &mut ContractState<'_>, init_data: &[u8]) -> ContractResult<()> {
+        let config: GenesisDeploymentConfig = bincode::deserialize(init_data)
+            .map_err(|e| ContractError::InvalidTransaction(format!("Invalid init_data: {e}")))?;
+
+        // Store config
+        state.storage_write(self.address(), KEY_CONFIG.to_vec(), init_data.to_vec());
+
+        // Initialize participant count
+        self.save_participant_count(state, 0);
+
+        // Initialize bounty tracker with current time
+        let now = crate::types::now_millis();
+        let tracker = BountyTracker::new(now);
+        self.save_bounty_tracker(state, &tracker)?;
+
+        // Emit initialization event
+        let event_data = bincode::serialize(&config.bootstrap_end).unwrap_or_default();
+        state.emit_event(crate::contracts::ContractEvent {
+            contract_id: self.id,
+            topic: "Initialized".to_string(),
+            data: event_data,
+        });
+
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
     use crate::crypto::Keypair;
+
+    /// Store a default GenesisDeploymentConfig into contract storage so
+    /// `execute_join` can read it.
+    fn store_default_config(
+        contract: &GenesisBountyContract,
+        storage: &mut HashMap<(Address, Vec<u8>), Vec<u8>>,
+    ) {
+        let authority_kp = Keypair::generate();
+        let config = GenesisDeploymentConfig {
+            airdrop_amount: HclawAmount::from_hclaw(AIRDROP_AMOUNT),
+            max_participants: MAX_PARTICIPANTS as u32,
+            pre_approved: Vec::new(),
+            dns_break_glass: DnsBreakGlassConfig {
+                domain: "bootstrap.hardclaw.net".to_string(),
+                max_nodes: 10,
+                tokens_each: HclawAmount::from_hclaw(500),
+                vesting_ms: 86_400_000,
+                authority_key: authority_kp.public_key().clone(),
+            },
+            bootstrap_end: 9_999_999_999,
+        };
+        let data = bincode::serialize(&config).expect("serialize config");
+        storage.insert((contract.address(), KEY_CONFIG.to_vec()), data);
+    }
 
     #[test]
     fn test_join_genesis() {
-        let mut contract = GenesisBountyContract::new(1000);
+        let contract = GenesisBountyContract::new(1000);
         let mut accounts = HashMap::new();
         let mut storage = HashMap::new();
+
+        store_default_config(&contract, &mut storage);
 
         let kp = Keypair::generate();
         let sender = Address::from_public_key(kp.public_key());
@@ -354,23 +476,24 @@ mod tests {
             crate::state::AccountState::new(HclawAmount::from_hclaw(1000)),
         );
 
-        let mut contract_state = ContractState::new(&mut accounts, &mut storage);
+        let mut state = ContractState::new(&mut accounts, &mut storage);
 
-        // Join with valid stake
         let stake_amount = HclawAmount::from_hclaw(MIN_STAKE);
-        let result = contract.execute_join(&mut contract_state, sender, stake_amount);
-        assert!(result.is_ok());
+        let result = contract.execute_join(&mut state, sender, stake_amount);
+        assert!(result.is_ok(), "join failed: {:?}", result.err());
 
-        // Verify participant added
-        assert_eq!(contract.participant_count, 1);
-        assert!(contract.participants.contains_key(&sender));
+        // Verify via storage (not in-memory state)
+        assert!(contract.load_participant(&state, &sender).is_some());
+        assert_eq!(contract.load_participant_count(&state), 1);
     }
 
     #[test]
     fn test_join_fails_below_min_stake() {
-        let mut contract = GenesisBountyContract::new(1000);
+        let contract = GenesisBountyContract::new(1000);
         let mut accounts = HashMap::new();
         let mut storage = HashMap::new();
+
+        store_default_config(&contract, &mut storage);
 
         let kp = Keypair::generate();
         let sender = Address::from_public_key(kp.public_key());
@@ -380,19 +503,20 @@ mod tests {
             crate::state::AccountState::new(HclawAmount::from_hclaw(1000)),
         );
 
-        let mut contract_state = ContractState::new(&mut accounts, &mut storage);
+        let mut state = ContractState::new(&mut accounts, &mut storage);
 
-        // Try to join with insufficient stake
         let stake_amount = HclawAmount::from_hclaw(MIN_STAKE - 1);
-        let result = contract.execute_join(&mut contract_state, sender, stake_amount);
+        let result = contract.execute_join(&mut state, sender, stake_amount);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_cannot_join_twice() {
-        let mut contract = GenesisBountyContract::new(1000);
+        let contract = GenesisBountyContract::new(1000);
         let mut accounts = HashMap::new();
         let mut storage = HashMap::new();
+
+        store_default_config(&contract, &mut storage);
 
         let kp = Keypair::generate();
         let sender = Address::from_public_key(kp.public_key());
@@ -402,17 +526,36 @@ mod tests {
             crate::state::AccountState::new(HclawAmount::from_hclaw(1000)),
         );
 
-        let mut contract_state = ContractState::new(&mut accounts, &mut storage);
+        let mut state = ContractState::new(&mut accounts, &mut storage);
         let stake_amount = HclawAmount::from_hclaw(MIN_STAKE);
 
         // First join succeeds
         assert!(contract
-            .execute_join(&mut contract_state, sender, stake_amount)
+            .execute_join(&mut state, sender, stake_amount)
             .is_ok());
 
-        // Second join fails
+        // Second join fails — duplicate detected via storage
         assert!(contract
-            .execute_join(&mut contract_state, sender, stake_amount)
+            .execute_join(&mut state, sender, stake_amount)
             .is_err());
+    }
+
+    #[test]
+    fn test_bounty_tracker_persists_across_calls() {
+        let contract = GenesisBountyContract::new(1000);
+        let mut accounts = HashMap::new();
+        let mut storage = HashMap::new();
+
+        store_default_config(&contract, &mut storage);
+
+        let mut state = ContractState::new(&mut accounts, &mut storage);
+
+        // Update node count — should persist via storage
+        assert!(contract.execute_update_nodes(&mut state, 10).is_ok());
+
+        // Load tracker back — count should be 10
+        let tracker = contract.load_bounty_tracker(&state);
+        assert_eq!(tracker.public_node_count, 10);
+        assert!(tracker.is_active());
     }
 }

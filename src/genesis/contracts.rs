@@ -16,13 +16,13 @@ use crate::contracts::ContractRegistry;
 ///
 /// # Arguments
 /// * `bounty_start_time` - Timestamp when bounty period starts (typically genesis timestamp)
-/// * `initial_voting_power` - Total voting power based on initial stake distribution
+/// * `_initial_voting_power` - Total voting power (set via `UpdateVotingPower` transaction after deploy)
 ///
 /// # Returns
 /// A `TransactionProcessor` with both contracts registered and ready for execution
 pub fn initialize_genesis_contracts(
     bounty_start_time: i64,
-    initial_voting_power: u128,
+    _initial_voting_power: u128,
 ) -> TransactionProcessor {
     let mut registry = ContractRegistry::new();
 
@@ -31,8 +31,9 @@ pub fn initialize_genesis_contracts(
     registry.register(Box::new(bounty_contract));
 
     // Create and register governance contract
-    let mut governance_contract = GovernanceContract::new();
-    governance_contract.update_voting_power(initial_voting_power);
+    // Voting power is storage-backed and initialized to 0 via on_deploy.
+    // Use an UpdateVotingPower transaction to set initial voting power.
+    let governance_contract = GovernanceContract::new();
     registry.register(Box::new(governance_contract));
 
     // Create transaction processor with initialized registry

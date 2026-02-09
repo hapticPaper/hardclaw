@@ -3,6 +3,8 @@
 mod address;
 mod amount;
 mod block;
+/// Genesis-related types (DNS break-glass config, claims)
+pub mod genesis;
 pub mod governance;
 mod job;
 pub mod review;

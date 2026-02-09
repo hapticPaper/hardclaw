@@ -11,14 +11,16 @@ use tracing::{info, warn};
 use tracing_subscriber::FmtSubscriber;
 
 use hardclaw::{
+    contracts::genesis_bounty::GenesisDeploymentConfig,
     crypto::Keypair,
     generate_mnemonic,
     genesis::config::GenesisConfigToml,
+    genesis::DnsBreakGlassConfig,
     keypair_from_phrase,
     mempool::Mempool,
     network::{NetworkConfig, NetworkEvent, NetworkNode, PeerInfo},
     state::ChainState,
-    types::{Address, Block},
+    types::{Address, Block, HclawAmount, JobPacket, JobType, SystemJobKind, VerificationSpec},
     verifier::{Verifier, VerifierConfig},
 };
 
@@ -243,6 +245,12 @@ impl HardClawNode {
 
         // Initialize genesis block if needed
         let mut state = self.state.write().await;
+
+        // Set chain ID on state so the API/explorer can display it
+        if let Some(ref chain_id) = self.config.chain_id {
+            state.set_chain_id(chain_id.clone());
+        }
+
         if state.height() == 0 {
             // Load genesis config if provided
             if let Some(ref genesis_path) = self.config.genesis_config_path {
@@ -275,24 +283,147 @@ impl HardClawNode {
                 let authority_key = hardclaw::crypto::PublicKey::from_bytes(&authority_bytes)
                     .map_err(|e| anyhow::anyhow!("Invalid authority key: {}", e))?;
 
-                let genesis_config = hardclaw::genesis::GenesisConfig::new(
-                    toml_config.chain_id.clone(),
-                    pre_approved,
-                    authority_key,
-                    0,
+                // Use current time for bootstrap end calculation
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
+                // Create GenesisDeploymentConfig
+                let genesis_config = GenesisDeploymentConfig {
+                    airdrop_amount: HclawAmount::from_hclaw(100), // Default 100
+                    max_participants: 5000,
+                    pre_approved: pre_approved.clone(),
+                    dns_break_glass: DnsBreakGlassConfig {
+                        domain: hardclaw::genesis::BOOTSTRAP_DNS_DOMAIN.to_string(),
+                        max_nodes: hardclaw::genesis::MAX_DNS_BOOTSTRAP_NODES,
+                        tokens_each: HclawAmount::from_hclaw(
+                            hardclaw::genesis::DNS_BOOTSTRAP_TOKENS,
+                        ),
+                        vesting_ms: hardclaw::genesis::DNS_BOOTSTRAP_VESTING_MS,
+                        authority_key: authority_key.clone(),
+                    },
+                    bootstrap_end: now + 30 * 24 * 3600, // 30 days
+                };
+
+                info!("Creating genesis block with config: {:?}", genesis_config);
+
+                // Serialize config
+                let init_data = bincode::serialize(&genesis_config)
+                    .expect("failed to serialize genesis config");
+
+                // Build the deploy system job
+                let deploy_kind = SystemJobKind::DeployContract {
+                    code: b"native:genesis_bounty_v1".to_vec(),
+                    init_data: init_data.clone(),
+                    deployer: Address::from_public_key(&authority_key),
+                };
+
+                // Create DEPLOY job
+                let genesis_job = JobPacket::new(
+                    JobType::System,
+                    authority_key.clone(),
+                    init_data,
+                    "Deploy genesis bounty contract".to_string(),
+                    HclawAmount::ZERO,
+                    HclawAmount::ZERO,
+                    VerificationSpec::SystemOperation {
+                        kind: deploy_kind,
+                        expected_state_hash: hardclaw::crypto::Hash::ZERO,
+                    },
+                    0, // No TTL for genesis
                 );
 
-                info!(
-                    chain_id = %genesis_config.chain_id,
-                    "Creating genesis block with config"
-                );
                 let genesis =
-                    Block::genesis_with_config(self.keypair.public_key().clone(), genesis_config);
+                    Block::genesis_with_job(self.keypair.public_key().clone(), genesis_job);
                 state.apply_block(genesis)?;
+
+                // Credit pre-approved addresses with genesis airdrop
+                for addr in &pre_approved {
+                    state
+                        .get_or_create_account(addr)
+                        .credit(HclawAmount::from_hclaw(100));
+                    info!(
+                        "Credited genesis airdrop (100 HCLAW) to pre-approved: {}",
+                        addr
+                    );
+                }
             } else {
-                info!("Creating genesis block (no genesis config)...");
-                let genesis = Block::genesis(self.keypair.public_key().clone());
+                let _chain_id = self
+                    .config
+                    .chain_id
+                    .clone()
+                    .unwrap_or_else(|| "hardclaw-local".to_string());
+                info!(
+                    "Creating genesis block (default config for '{}')...",
+                    _chain_id
+                );
+
+                // Use current time for local dev genesis
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
+                // Self is authority and pre-approved
+                let authority_key = self.keypair.public_key().clone();
+                let pre_approved = vec![Address::from_public_key(&authority_key)];
+
+                let genesis_config = GenesisDeploymentConfig {
+                    airdrop_amount: HclawAmount::from_hclaw(100),
+                    max_participants: 5000,
+                    pre_approved,
+                    dns_break_glass: DnsBreakGlassConfig {
+                        domain: hardclaw::genesis::BOOTSTRAP_DNS_DOMAIN.to_string(),
+                        max_nodes: hardclaw::genesis::MAX_DNS_BOOTSTRAP_NODES,
+                        tokens_each: HclawAmount::from_hclaw(
+                            hardclaw::genesis::DNS_BOOTSTRAP_TOKENS,
+                        ),
+                        vesting_ms: hardclaw::genesis::DNS_BOOTSTRAP_VESTING_MS,
+                        authority_key: authority_key.clone(),
+                    },
+                    bootstrap_end: now + 30 * 24 * 3600,
+                };
+
+                // Serialize config
+                let init_data = bincode::serialize(&genesis_config)
+                    .expect("failed to serialize genesis config");
+
+                // Build the deploy system job
+                let deploy_kind = SystemJobKind::DeployContract {
+                    code: b"native:genesis_bounty_v1".to_vec(),
+                    init_data: init_data.clone(),
+                    deployer: Address::from_public_key(&authority_key),
+                };
+
+                // Create DEPLOY job
+                let genesis_job = JobPacket::new(
+                    JobType::System,
+                    authority_key.clone(),
+                    init_data,
+                    "Deploy genesis bounty contract".to_string(),
+                    HclawAmount::ZERO,
+                    HclawAmount::ZERO,
+                    VerificationSpec::SystemOperation {
+                        kind: deploy_kind,
+                        expected_state_hash: hardclaw::crypto::Hash::ZERO,
+                    },
+                    0, // No TTL for genesis
+                );
+
+                let genesis =
+                    Block::genesis_with_job(self.keypair.public_key().clone(), genesis_job);
                 state.apply_block(genesis)?;
+
+                // Credit pre-approved addresses with genesis airdrop so balances are visible
+                let my_address = Address::from_public_key(&authority_key);
+                state
+                    .get_or_create_account(&my_address)
+                    .credit(HclawAmount::from_hclaw(100));
+                info!(
+                    "Credited genesis airdrop (100 HCLAW) to node address: {}",
+                    my_address
+                );
             }
         }
 

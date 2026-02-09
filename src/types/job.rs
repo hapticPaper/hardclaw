@@ -8,6 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::{now_millis, Address, GovernanceAction, HclawAmount, Id, Timestamp};
+// use super::genesis::DnsBreakGlassConfig;
 use crate::crypto::{hash_data, Hash, PublicKey, Signature};
 
 /// Type of job (determines verification method)
@@ -27,8 +28,7 @@ pub enum JobType {
 /// just like external jobs — keeping the chain self-hosting from block 0.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SystemJobKind {
-    /// The genesis bootstrap job itself (the "mother job")
-    GenesisBootstrap,
+    // GenesisBootstrap removed - use DeployContract instead
     /// A new verifier claimed an airdrop position
     AirdropClaim {
         /// Recipient address
@@ -83,6 +83,15 @@ pub enum SystemJobKind {
         input_data: Vec<u8>,
         /// Proposed execution result
         proposed_result: Vec<u8>,
+    },
+    /// Deploy a new smart contract
+    DeployContract {
+        /// Contract bytecode/definition
+        code: Vec<u8>,
+        /// Initialization parameters
+        init_data: Vec<u8>,
+        /// Deployer address
+        deployer: Address,
     },
     /// Governance proposal submitted
     GovernanceProposal {

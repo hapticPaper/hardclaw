@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,12 +10,13 @@
             --bg-color: #0d1117;
             --card-bg: #161b22;
             --text-color: #c9d1d9;
-            --accent-color: #00ff41; /* Hacker/Matrix Green */
+            --accent-color: #00ff41;
+            /* Hacker/Matrix Green */
             --accent-dim: #008f11;
             --border-color: #30363d;
             --code-font: 'Courier New', Courier, monospace;
         }
-        
+
         body {
             background-color: var(--bg-color);
             color: var(--text-color);
@@ -37,7 +39,9 @@
             margin-bottom: 30px;
         }
 
-        h1, h2, h3 {
+        h1,
+        h2,
+        h3 {
             color: var(--accent-color);
             font-family: var(--code-font);
             margin: 0;
@@ -149,8 +153,35 @@
             background: var(--accent-dim);
             color: white;
         }
+
+        /* Helper classes for lint compliance */
+        .text-large {
+            font-size: 1.2em;
+        }
+
+        .flex-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .code-block {
+            overflow-x: auto;
+        }
+
+        .genesis-card {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.1);
+            margin-bottom: 30px;
+        }
     </style>
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -167,7 +198,7 @@
             </div>
             <div class="card">
                 <div class="stat-label">Chain ID</div>
-                <div class="stat-value" id="stat-chain" style="font-size: 1.2em">-</div>
+                <div class="stat-value text-large" id="stat-chain">-</div>
             </div>
             <div class="card">
                 <div class="stat-label">Peers</div>
@@ -181,8 +212,10 @@
 
         <input type="text" id="search-box" placeholder="Search by Block Hash, Job ID, or Address...">
 
+        <div id="genesis-container"></div>
+
         <div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <div class="flex-header">
                 <h3>LATEST BLOCKS</h3>
                 <button class="refresh-btn" onclick="fetchRecentBlocks()">REFRESH</button>
             </div>
@@ -200,17 +233,18 @@
                 </tbody>
             </table>
         </div>
-        
+
         <br>
 
-        <div id="result-area" class="card" style="display:none;">
+        <div id="result-area" class="card hidden">
             <h3 id="result-title">SEARCH RESULT</h3>
-            <pre id="result-content" style="overflow-x:auto;"></pre>
+            <pre id="result-content" class="code-block"></pre>
         </div>
     </div>
 
     <script>
         const API_BASE = '/api';
+        const resultArea = document.getElementById('result-area');
 
         async function fetchStats() {
             try {
@@ -230,16 +264,38 @@
                 const res = await fetch(`${API_BASE}/blocks/recent`);
                 const blocks = await res.json();
                 const tbody = document.getElementById('blocks-table');
-                tbody.innerHTML = '';
-                
+                while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
                 blocks.forEach(block => {
                     const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>${block.height}</td>
-                        <td class="hash" style="cursor:pointer" onclick="showBlock('${block.hash}')">${block.hash.substring(0, 16)}...</td>
-                        <td class="hash">${block.parent_hash.substring(0, 16)}...</td>
-                        <td>${block.tx_count}</td>
-                    `;
+
+                    const tdHeight = document.createElement('td');
+                    tdHeight.textContent = block.height;
+                    if (block.is_genesis) {
+                        const badge = document.createElement('span');
+                        badge.textContent = ' [GENESIS]';
+                        badge.style.color = 'var(--accent-color)';
+                        badge.style.fontSize = '0.8em';
+                        tdHeight.appendChild(badge);
+                    }
+
+                    const tdHash = document.createElement('td');
+                    tdHash.className = 'hash';
+                    tdHash.style.cursor = 'pointer';
+                    tdHash.textContent = block.hash.substring(0, 16) + '...';
+                    tdHash.addEventListener('click', function() { showBlock(block.hash); });
+
+                    const tdParent = document.createElement('td');
+                    tdParent.className = 'hash';
+                    tdParent.textContent = block.parent_hash.substring(0, 16) + '...';
+
+                    const tdTx = document.createElement('td');
+                    tdTx.textContent = block.tx_count;
+
+                    row.appendChild(tdHeight);
+                    row.appendChild(tdHash);
+                    row.appendChild(tdParent);
+                    row.appendChild(tdTx);
                     tbody.appendChild(row);
                 });
             } catch (e) {
@@ -247,47 +303,156 @@
             }
         }
 
+        async function fetchGenesisInfo() {
+            try {
+                const res = await fetch(`${API_BASE}/genesis`);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.error) return;
+
+                const container = document.getElementById('genesis-container');
+                if (document.getElementById('genesis-job-card')) return;
+
+                const card = document.createElement('div');
+                card.className = 'card genesis-card';
+                card.id = 'genesis-job-card';
+
+                const header = document.createElement('div');
+                header.className = 'flex-header';
+
+                const title = document.createElement('h3');
+                title.textContent = 'GENESIS BLOCK ';
+                const subtitle = document.createElement('span');
+                subtitle.style.fontSize = '0.7em';
+                subtitle.style.color = 'var(--text-color)';
+                subtitle.textContent = '// SYSTEM';
+                title.appendChild(subtitle);
+
+                const hashSpan = document.createElement('span');
+                hashSpan.className = 'hash';
+                hashSpan.textContent = data.hash ? data.hash.substring(0, 16) + '...' : '';
+
+                header.appendChild(title);
+                header.appendChild(hashSpan);
+                card.appendChild(header);
+
+                if (data.genesis_job) {
+                    const desc = document.createElement('p');
+                    desc.style.color = 'var(--text-color)';
+                    desc.style.marginBottom = '15px';
+                    desc.textContent = data.genesis_job.description || 'Genesis bootstrap job';
+                    card.appendChild(desc);
+
+                    const grid = document.createElement('div');
+                    grid.style.display = 'grid';
+                    grid.style.gridTemplateColumns = '1fr 1fr';
+                    grid.style.gap = '10px';
+                    grid.style.fontSize = '0.9em';
+                    grid.style.color = '#8b949e';
+
+                    const bountyDiv = document.createElement('div');
+                    bountyDiv.textContent = 'BOUNTY: ';
+                    const bountyVal = document.createElement('span');
+                    bountyVal.style.color = 'var(--accent-color)';
+                    bountyVal.textContent = data.genesis_job.bounty + ' HCLAW';
+                    bountyDiv.appendChild(bountyVal);
+
+                    const statusDiv = document.createElement('div');
+                    statusDiv.textContent = 'STATUS: ';
+                    const statusVal = document.createElement('span');
+                    statusVal.style.color = 'var(--accent-color)';
+                    statusVal.textContent = data.genesis_job.status || 'Active';
+                    statusDiv.appendChild(statusVal);
+
+                    const typeDiv = document.createElement('div');
+                    typeDiv.textContent = 'TYPE: ';
+                    const typeVal = document.createElement('span');
+                    typeVal.style.color = 'var(--accent-color)';
+                    typeVal.textContent = data.genesis_job.job_type || 'System';
+                    typeDiv.appendChild(typeVal);
+
+                    const proposerDiv = document.createElement('div');
+                    proposerDiv.textContent = 'PROPOSER: ';
+                    const proposerVal = document.createElement('span');
+                    proposerVal.className = 'hash';
+                    proposerVal.textContent = data.proposer ? data.proposer.substring(0, 16) + '...' : '-';
+                    proposerDiv.appendChild(proposerVal);
+
+                    grid.appendChild(bountyDiv);
+                    grid.appendChild(statusDiv);
+                    grid.appendChild(typeDiv);
+                    grid.appendChild(proposerDiv);
+                    card.appendChild(grid);
+                } else {
+                    const info = document.createElement('p');
+                    info.style.color = '#8b949e';
+                    info.textContent = 'Genesis block at height 0 — proposer: ' + (data.proposer || 'unknown');
+                    card.appendChild(info);
+                }
+
+                container.appendChild(card);
+            } catch (e) {
+                console.error("Failed to fetch genesis info", e);
+            }
+        }
+
+        function isHexAddress(q) {
+            var stripped = q.startsWith('0x') ? q.substring(2) : q;
+            return stripped.length === 40 && /^[0-9a-fA-F]{40}$/.test(stripped);
+        }
+
         async function search(query) {
             query = query.trim();
             if (!query) return;
 
-            const resultArea = document.getElementById('result-area');
             const resultTitle = document.getElementById('result-title');
             const resultContent = document.getElementById('result-content');
-            
+
+            resultArea.classList.remove('hidden');
             resultArea.style.display = 'block';
             resultContent.textContent = "Searching...";
 
-            // Try Address Balance first
-            if (query.startsWith('0x')) {
-                const res = await fetch(`${API_BASE}/balance/${query}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    resultTitle.textContent = "ACCOUNT: " + query;
-                    resultContent.textContent = JSON.stringify(data, null, 2);
-                    return;
+            try {
+                // Try Address Balance first (with or without 0x prefix)
+                if (isHexAddress(query)) {
+                    var addrQuery = query.startsWith('0x') ? query : '0x' + query;
+                    var res = await fetch(`${API_BASE}/balance/${addrQuery}`);
+                    if (res.ok) {
+                        var data = await res.json();
+                        if (!data.error) {
+                            resultTitle.textContent = "ACCOUNT: " + addrQuery;
+                            resultContent.textContent = JSON.stringify(data, null, 2);
+                            return;
+                        }
+                    }
                 }
-            }
 
-            // Try Block
-            let res = await fetch(`${API_BASE}/block/${query}`);
-            if (res.ok) {
-                const data = await res.json();
-                resultTitle.textContent = "BLOCK: " + query;
-                resultContent.textContent = JSON.stringify(data, null, 2);
-                return;
-            }
+                // Try Block
+                var res = await fetch(`${API_BASE}/block/${query}`);
+                if (res.ok) {
+                    var data = await res.json();
+                    if (!data.error) {
+                        resultTitle.textContent = "BLOCK: " + query;
+                        resultContent.textContent = JSON.stringify(data, null, 2);
+                        return;
+                    }
+                }
 
-            // Try Job
-            res = await fetch(`${API_BASE}/job/${query}`);
-            if (res.ok) {
-                const data = await res.json();
-                resultTitle.textContent = "JOB: " + query;
-                resultContent.textContent = JSON.stringify(data, null, 2);
-                return;
-            }
+                // Try Job
+                res = await fetch(`${API_BASE}/job/${query}`);
+                if (res.ok) {
+                    var data = await res.json();
+                    if (!data.error) {
+                        resultTitle.textContent = "JOB: " + query;
+                        resultContent.textContent = JSON.stringify(data, null, 2);
+                        return;
+                    }
+                }
 
-            resultContent.textContent = "No results found.";
+                resultContent.textContent = "No results found.";
+            } catch (e) {
+                resultContent.textContent = "Search failed: " + e.message;
+            }
         }
 
         function showBlock(hash) {
@@ -304,8 +469,10 @@
         // Initialize
         fetchStats();
         fetchRecentBlocks();
-        setInterval(fetchStats, 5000); // Polling every 5s
-        setInterval(fetchRecentBlocks, 10000); // Poll blocks every 10s
+        fetchGenesisInfo();
+        setInterval(fetchStats, 5000);
+        setInterval(fetchRecentBlocks, 10000);
     </script>
 </body>
+
 </html>

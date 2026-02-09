@@ -97,26 +97,32 @@ async fn handle_request(
             "chain_id": chain_id,
             "tip": tip,
             "mempool_size": mp_size.jobs + mp_size.solutions,
-            "peer_count": 0 // TODO: Pass peer count if needed
+            "peer_count": 0
         }));
     }
 
     if path == "/api/blocks/recent" {
         let blocks = {
             let st = state.read().await;
-            let height = st.height();
+            let height = st.height(); // block count (1 after genesis)
             let mut b = Vec::new();
-            let start = height.saturating_sub(9); // Last 10 blocks (inclusive)
 
-            for h in (start..=height).rev() {
-                if let Some(block) = st.get_block_at_height(h) {
-                    b.push(json!({
-                        "height": block.header.height,
-                        "hash": block.hash.to_string(),
-                        "parent_hash": block.header.parent_hash.to_string(),
-                        "tx_count": block.verifications.len(),
-                        "timestamp": block.header.timestamp
-                    }));
+            if height > 0 {
+                let max_block = height - 1; // 0-indexed block heights
+                let start = max_block.saturating_sub(9);
+
+                for h in (start..=max_block).rev() {
+                    if let Some(block) = st.get_block_at_height(h) {
+                        let has_genesis = block.genesis_job.is_some();
+                        b.push(json!({
+                            "height": block.header.height,
+                            "hash": block.hash.to_string(),
+                            "parent_hash": block.header.parent_hash.to_string(),
+                            "tx_count": block.verifications.len(),
+                            "timestamp": block.header.timestamp,
+                            "is_genesis": has_genesis
+                        }));
+                    }
                 }
             }
             b
@@ -154,14 +160,56 @@ async fn handle_request(
             }
         }
 
+        // Try by height
+        if let Ok(height) = query.parse::<u64>() {
+            let block = state.read().await.get_block_at_height(height).cloned();
+            if let Some(b) = block {
+                return json_response(json!(b));
+            }
+        }
+
         return json_response(json!({ "error": "Block not found" }));
     }
 
     if path.starts_with("/api/job/") {
-        let _id = path.trim_start_matches("/api/job/");
-        // In a real impl we'd parse UUID, but let's just handle it loosely if needed or assume we query state.jobs map
-        // For now, minimal stub:
-        return json_response(json!({ "error": "Job lookup not fully implemented yet" }));
+        let query = path.trim_start_matches("/api/job/");
+        if let Ok(hash) = Hash::from_hex(query) {
+            let job = state.read().await.get_job(&hash).cloned();
+            if let Some(j) = job {
+                return json_response(json!(j));
+            }
+        }
+        return json_response(json!({ "error": "Job not found" }));
+    }
+
+    // Genesis info endpoint - returns genesis block details
+    if path == "/api/genesis" {
+        let result = {
+            let st = state.read().await;
+            st.get_block_at_height(0).map(|block| {
+                let genesis_job = block.genesis_job.as_ref().map(|job| {
+                    json!({
+                        "id": job.id.to_string(),
+                        "description": job.description,
+                        "job_type": format!("{:?}", job.job_type),
+                        "status": format!("{:?}", job.status),
+                        "bounty": job.bounty.whole_hclaw(),
+                        "created_at": job.created_at
+                    })
+                });
+                json!({
+                    "height": 0,
+                    "hash": block.hash.to_string(),
+                    "proposer": block.header.proposer.to_hex(),
+                    "timestamp": block.header.timestamp,
+                    "genesis_job": genesis_job
+                })
+            })
+        };
+        return match result {
+            Some(data) => json_response(data),
+            None => json_response(json!({ "error": "Genesis block not found" })),
+        };
     }
 
     not_found()

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{now_millis, Id, Timestamp, VerificationResult};
 use crate::crypto::{hash_data, merkle_root, Hash, PublicKey, Signature};
-use crate::genesis::GenesisConfig;
+use crate::types::job::JobPacket;
 
 /// Block header containing metadata and commitments
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -109,8 +109,9 @@ pub struct Block {
     pub attestations: Vec<VerifierAttestation>,
     /// Proposer's signature over the block
     pub proposer_signature: Signature,
-    /// Genesis config (only present in the genesis block)
-    pub genesis_config: Option<GenesisConfig>,
+    /// Genesis job packet (only present in the genesis block)
+    /// This job CONTAINS the genesis configuration in its system variant.
+    pub genesis_job: Option<JobPacket>,
 }
 
 impl Block {
@@ -145,7 +146,7 @@ impl Block {
             verifications,
             attestations: Vec::new(),
             proposer_signature: Signature::placeholder(),
-            genesis_config: None,
+            genesis_job: None,
         }
     }
 
@@ -155,16 +156,16 @@ impl Block {
         Self::new(0, Hash::ZERO, proposer, Vec::new(), Hash::ZERO)
     }
 
-    /// Create the genesis block with a genesis config
+    /// Create the genesis block with the Genesis Job
     #[must_use]
-    pub fn genesis_with_config(proposer: PublicKey, config: GenesisConfig) -> Self {
+    pub fn genesis_with_job(proposer: PublicKey, job: JobPacket) -> Self {
         let mut block = Self::new(0, Hash::ZERO, proposer, Vec::new(), Hash::ZERO);
-        block.genesis_config = Some(config);
-        // Recompute hash to include genesis config commitment
-        let config_hash = hash_data(&bincode::serialize(&block.genesis_config).unwrap_or_default());
+        block.genesis_job = Some(job);
+        // Recompute hash to include genesis job commitment
+        let job_hash = hash_data(&bincode::serialize(&block.genesis_job).unwrap_or_default());
         let mut data = Vec::new();
         data.extend_from_slice(block.hash.as_bytes());
-        data.extend_from_slice(config_hash.as_bytes());
+        data.extend_from_slice(job_hash.as_bytes());
         block.hash = hash_data(&data);
         block
     }

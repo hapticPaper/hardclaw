@@ -6,7 +6,7 @@
 //! mechanism, and the bootstrap state machine.
 
 pub mod airdrop;
-pub mod bootstrap;
+// pub mod bootstrap;
 pub mod bounty;
 pub mod competency;
 pub mod config;
@@ -139,119 +139,7 @@ pub struct DnsBootstrapClaim {
     pub vests_at: Timestamp,
 }
 
-/// The full genesis configuration embedded in block 0
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenesisConfig {
-    /// Chain identifier (prevents replay across networks)
-    pub chain_id: String,
-    /// The bootstrap job
-    pub bootstrap_job: BootstrapJob,
-    /// Flat airdrop amount (100 HCLAW per participant)
-    pub airdrop_amount: HclawAmount,
-    /// Maximum participants (5,000)
-    pub max_participants: u32,
-    /// Pre-approved verifier addresses (skip competency check)
-    pub pre_approved: Vec<Address>,
-    /// DNS break-glass configuration
-    pub dns_break_glass: DnsBreakGlassConfig,
-    /// Bootstrap period start (genesis block timestamp)
-    pub bootstrap_start: Timestamp,
-    /// Bootstrap period end
-    pub bootstrap_end: Timestamp,
-    /// Protocol version at genesis
-    pub protocol_version: u32,
-    /// Whether to deploy genesis contracts in the genesis block
-    #[serde(default)]
-    pub deploy_contracts: bool,
-    /// Initial total voting power (sum of all stakes)
-    /// Only used if `deploy_contracts` is true
-    #[serde(default)]
-    pub initial_voting_power: u128,
-}
-
-impl GenesisConfig {
-    /// Create the default genesis config
-    #[must_use]
-    pub fn new(
-        chain_id: String,
-        pre_approved: Vec<Address>,
-        authority_key: PublicKey,
-        now: Timestamp,
-    ) -> Self {
-        let airdrop_amount = HclawAmount::from_hclaw(GENESIS_AIRDROP_AMOUNT);
-        let total_bounty = HclawAmount::from_hclaw(AIRDROP_POOL_HCLAW);
-
-        Self {
-            chain_id,
-            bootstrap_job: BootstrapJob::new(total_bounty, BOOTSTRAP_DURATION_MS),
-            airdrop_amount,
-            max_participants: MAX_GENESIS_PARTICIPANTS,
-            pre_approved,
-            dns_break_glass: DnsBreakGlassConfig {
-                domain: BOOTSTRAP_DNS_DOMAIN.to_string(),
-                max_nodes: MAX_DNS_BOOTSTRAP_NODES,
-                tokens_each: HclawAmount::from_hclaw(DNS_BOOTSTRAP_TOKENS),
-                vesting_ms: DNS_BOOTSTRAP_VESTING_MS,
-                authority_key,
-            },
-            bootstrap_start: now,
-            bootstrap_end: now + BOOTSTRAP_DURATION_MS,
-            protocol_version: 1,
-            deploy_contracts: false, // default to opt-in
-            initial_voting_power: 0,
-        }
-    }
-
-    /// Compute a deterministic hash of this config (for genesis block hash)
-    #[must_use]
-    pub fn config_hash(&self) -> Hash {
-        let mut data = Vec::new();
-        data.extend_from_slice(self.chain_id.as_bytes());
-        data.extend_from_slice(self.bootstrap_job.id.as_bytes());
-        data.extend_from_slice(&self.bootstrap_start.to_le_bytes());
-        data.extend_from_slice(&self.bootstrap_end.to_le_bytes());
-        data.extend_from_slice(&self.airdrop_amount.raw().to_le_bytes());
-        data.extend_from_slice(&self.max_participants.to_le_bytes());
-        for addr in &self.pre_approved {
-            data.extend_from_slice(addr.as_bytes());
-        }
-        data.extend_from_slice(self.dns_break_glass.authority_key.as_bytes());
-        hash_data(&data)
-    }
-
-    /// Validate the config
-    pub fn validate(&self) -> Result<(), GenesisError> {
-        if self.chain_id.is_empty() {
-            return Err(GenesisError::InvalidConfig("chain_id is empty".into()));
-        }
-        if self.max_participants == 0 {
-            return Err(GenesisError::InvalidConfig(
-                "max_participants is zero".into(),
-            ));
-        }
-        if self.airdrop_amount.raw() == 0 {
-            return Err(GenesisError::InvalidConfig("airdrop_amount is zero".into()));
-        }
-        if self.dns_break_glass.max_nodes > 10 {
-            return Err(GenesisError::InvalidConfig(
-                "DNS break-glass max_nodes cannot exceed 10".into(),
-            ));
-        }
-        Ok(())
-    }
-
-    /// Total maximum supply that could be minted at genesis
-    /// (airdrop pool + full DNS break-glass reserve)
-    #[must_use]
-    pub fn max_genesis_supply(&self) -> HclawAmount {
-        let airdrop_total =
-            HclawAmount::from_raw(self.airdrop_amount.raw() * self.max_participants as u128);
-        let dns_reserve = HclawAmount::from_raw(
-            self.dns_break_glass.tokens_each.raw() * self.dns_break_glass.max_nodes as u128,
-        );
-        airdrop_total.saturating_add(dns_reserve)
-    }
-}
+// GenesisConfig removed
 
 /// Genesis-related errors
 #[derive(Debug, thiserror::Error)]
@@ -312,34 +200,25 @@ mod tests {
     }
 
     #[test]
-    fn test_genesis_config_hash_deterministic() {
-        let addrs = test_addresses(2);
+    fn test_dns_break_glass_config() {
         let authority = Keypair::generate();
-        let cfg1 = GenesisConfig::new(
-            "test-1".into(),
-            addrs.clone(),
-            authority.public_key().clone(),
-            1000,
-        );
-        let cfg2 = GenesisConfig::new("test-1".into(), addrs, authority.public_key().clone(), 1000);
-        assert_eq!(cfg1.config_hash(), cfg2.config_hash());
-    }
-
-    #[test]
-    fn test_genesis_config_validation() {
-        let addrs = test_addresses(5);
-        let authority = Keypair::generate();
-        let cfg = GenesisConfig::new("test".into(), addrs, authority.public_key().clone(), 1000);
-        assert!(cfg.validate().is_ok());
+        let cfg = DnsBreakGlassConfig {
+            domain: BOOTSTRAP_DNS_DOMAIN.to_string(),
+            max_nodes: MAX_DNS_BOOTSTRAP_NODES,
+            tokens_each: HclawAmount::from_hclaw(DNS_BOOTSTRAP_TOKENS),
+            vesting_ms: DNS_BOOTSTRAP_VESTING_MS,
+            authority_key: authority.public_key().clone(),
+        };
+        assert_eq!(cfg.max_nodes, 10);
+        assert_eq!(cfg.tokens_each.whole_hclaw(), 250_000);
     }
 
     #[test]
     fn test_max_genesis_supply() {
-        let addrs = test_addresses(5);
-        let authority = Keypair::generate();
-        let cfg = GenesisConfig::new("test".into(), addrs, authority.public_key().clone(), 1000);
         // 500,000 airdrop + 10 * 250,000 DNS = 3,000,000
-        assert_eq!(cfg.max_genesis_supply().whole_hclaw(), 3_000_000);
+        let airdrop = AIRDROP_POOL_HCLAW;
+        let dns = MAX_DNS_BOOTSTRAP_NODES as u64 * DNS_BOOTSTRAP_TOKENS;
+        assert_eq!(airdrop + dns, 3_000_000);
     }
 
     #[test]
