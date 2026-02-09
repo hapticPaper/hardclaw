@@ -260,12 +260,11 @@ impl App {
             AppState::Help => {
                 self.state = AppState::MainMenu;
             }
-            AppState::NodeRunning => match key {
-                KeyCode::Esc => {
+            AppState::NodeRunning => {
+                if key == KeyCode::Esc {
                     self.state = AppState::MainMenu;
                 }
-                _ => {}
-            },
+            }
             AppState::Quit => return true,
         }
 

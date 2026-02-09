@@ -47,7 +47,7 @@ pub async fn start_api_server(
         tokio::spawn(async move {
             let mut buf = [0; 4096];
             let n = match socket.read(&mut buf).await {
-                Ok(n) if n == 0 => return,
+                Ok(0) => return,
                 Ok(n) => n,
                 Err(_) => return,
             };
@@ -77,15 +77,16 @@ async fn handle_request(req: &str, state: &Arc<RwLock<ChainState>>, mempool: &Ar
     }
 
     if path == "/api/status" {
-        let st = state.read().await;
-        let mp = mempool.read().await;
+        let (height, chain_id, tip) = {
+            let st = state.read().await;
+            (
+                st.height(), 
+                st.chain_id().map(ToString::to_string), 
+                st.tip().map(|b| b.hash.to_string())
+            )
+        };
         
-        let height = st.height();
-        let chain_id = st.chain_id();
-        let tip = st.tip().map(|b| b.hash.to_string());
-        
-        // Mempool size
-        let mp_size = mp.size();
+        let mp_size = mempool.read().await.size();
         
         return json_response(json!({
             "height": height,
@@ -97,22 +98,25 @@ async fn handle_request(req: &str, state: &Arc<RwLock<ChainState>>, mempool: &Ar
     }
 
     if path == "/api/blocks/recent" {
-        let st = state.read().await;
-        let height = st.height();
-        let mut blocks = Vec::new();
-        let start = height.saturating_sub(9); // Last 10 blocks (inclusive)
-        
-        for h in (start..=height).rev() {
-            if let Some(block) = st.get_block_at_height(h) {
-                blocks.push(json!({
-                    "height": block.header.height,
-                    "hash": block.hash.to_string(),
-                    "parent_hash": block.header.parent_hash.to_string(),
-                    "tx_count": block.verifications.len(),
-                    "timestamp": block.header.timestamp
-                }));
+        let blocks = {
+            let st = state.read().await;
+            let height = st.height();
+            let mut b = Vec::new();
+            let start = height.saturating_sub(9); // Last 10 blocks (inclusive)
+            
+            for h in (start..=height).rev() {
+                if let Some(block) = st.get_block_at_height(h) {
+                    b.push(json!({
+                        "height": block.header.height,
+                        "hash": block.hash.to_string(),
+                        "parent_hash": block.header.parent_hash.to_string(),
+                        "tx_count": block.verifications.len(),
+                        "timestamp": block.header.timestamp
+                    }));
+                }
             }
-        }
+            b
+        };
         return json_response(json!(blocks));
     }
 
@@ -124,8 +128,7 @@ async fn handle_request(req: &str, state: &Arc<RwLock<ChainState>>, mempool: &Ar
                 let mut arr = [0u8; 20];
                 arr.copy_from_slice(&bytes);
                 let address = Address::from_bytes(arr);
-                let st = state.read().await;
-                let balance = st.balance_of(&address);
+                let balance = state.read().await.balance_of(&address);
                 return json_response(json!({
                     "address": addr_str,
                     "balance": balance.whole_hclaw(),
@@ -138,12 +141,12 @@ async fn handle_request(req: &str, state: &Arc<RwLock<ChainState>>, mempool: &Ar
 
     if path.starts_with("/api/block/") {
         let query = path.trim_start_matches("/api/block/");
-        let st = state.read().await;
         
         // Try by hash first
         if let Ok(hash) = Hash::from_hex(query) {
-            if let Some(block) = st.get_block(&hash) {
-                 return json_response(json!(block));
+            let block = state.read().await.get_block(&hash).cloned();
+            if let Some(b) = block {
+                 return json_response(json!(b));
             }
         }
         
