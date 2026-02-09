@@ -1388,7 +1388,7 @@ dependencies = [
 
 [[package]]
 name = "hardclaw"
-version = "0.10.29"
+version = "0.10.30"
 dependencies = [
  "anyhow",
  "bincode",

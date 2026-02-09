@@ -7,43 +7,43 @@ use hardclaw::{
     generate_mnemonic, keypair_from_mnemonic,
     types::{Address, HclawAmount, JobPacket, JobType, VerificationSpec},
 };
+use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::net::TcpStream;
 use std::io::Read;
-use serde_json::Value; // Make sure serde_json is available (it is in Cargo.toml)
+use std::net::TcpStream; // Make sure serde_json is available (it is in Cargo.toml)
 
 fn query_balance(addr: &str) -> Option<(f64, u64)> {
     let port = std::env::var("HARDCLAW_API_PORT").unwrap_or_else(|_| "9001".to_string());
     let host = format!("127.0.0.1:{}", port);
-    
+
     match TcpStream::connect(&host) {
         Ok(mut stream) => {
             let request = format!(
                 "GET /api/balance/{} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
                 addr, host
             );
-            
+
             if stream.write_all(request.as_bytes()).is_err() {
                 return None;
             }
-            
+
             let mut response = String::new();
             if stream.read_to_string(&mut response).is_err() {
                 return None;
             }
-            
+
             // Simple HTTP parsing: skip headers
             if let Some(body_start) = response.find("\r\n\r\n") {
-                 let body = &response[body_start+4..];
-                 if let Ok(json) = serde_json::from_str::<Value>(body) {
-                     let balance_f64 = json["balance"].as_f64()?;
-                     let raw = json["raw"].as_u64()?;
-                     return Some((balance_f64, raw));
-                 }
+                let body = &response[body_start + 4..];
+                if let Ok(json) = serde_json::from_str::<Value>(body) {
+                    let balance_f64 = json["balance"].as_f64()?;
+                    let raw = json["raw"].as_u64()?;
+                    return Some((balance_f64, raw));
+                }
             }
             None
         }
-        Err(_) => None
+        Err(_) => None,
     }
 }
 
@@ -163,13 +163,16 @@ pub fn run() {
                 let addr = parts[1];
                 print!("Querying node... ");
                 io::stdout().flush().unwrap();
-                
+
                 match query_balance(addr) {
                     Some((bal, raw)) => {
                         println!("\rBalance for {}: {} HCLAW ({} raw)", addr, bal, raw);
                     }
                     None => {
-                        println!("\rBalance for {}: Could not connect to node (is it running?)", addr);
+                        println!(
+                            "\rBalance for {}: Could not connect to node (is it running?)",
+                            addr
+                        );
                     }
                 }
             }

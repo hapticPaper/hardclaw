@@ -58,10 +58,7 @@ pub const BOOTSTRAP_NODES: &[&str] = &[
 
 /// DNS seeds for initial node discovery.
 /// These resolve to multiple bootstrap-class nodes via dnsaddr TXT records.
-pub const DNS_SEEDS: &[&str] = &[
-    "/dnsaddr/seed.hardclaw.org",
-    "/dnsaddr/seed.clawpaper.com",
-];
+pub const DNS_SEEDS: &[&str] = &["/dnsaddr/seed.hardclaw.org", "/dnsaddr/seed.clawpaper.com"];
 
 /// Persistent storage for discovered peers to accelerate starts.
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -110,7 +107,7 @@ impl PeerStore {
     fn add(&mut self, peer_id: &PeerId, addr: &Multiaddr) {
         let peer_str = peer_id.to_string();
         let addr_str = addr.to_string();
-        
+
         self.peers.entry(peer_str).or_default().insert(addr_str);
     }
 
@@ -118,7 +115,7 @@ impl PeerStore {
     fn get_bootstrap_peers(&self, limit: usize) -> Vec<(PeerId, Multiaddr)> {
         let mut results = Vec::new();
         let mut rng = rand::thread_rng();
-        
+
         // Convert to vec for shuffling
         let mut peer_ids: Vec<_> = self.peers.keys().collect();
         peer_ids.shuffle(&mut rng);
@@ -136,7 +133,7 @@ impl PeerStore {
         }
         results
     }
-    
+
     /// Check if the store has exceeded its size limit (e.g. 1MB)
     fn is_oversized(&self) -> bool {
         // Simple heuristic: 1000 peers is roughly 1MB of JSON
@@ -508,10 +505,16 @@ impl NetworkNode {
         // 1. Priority: Try connecting to cached peers from last session
         let cached_peers = self.peer_store.get_bootstrap_peers(20);
         if !cached_peers.is_empty() {
-            info!(count = cached_peers.len(), "Attempting to connect to cached peers");
+            info!(
+                count = cached_peers.len(),
+                "Attempting to connect to cached peers"
+            );
             for (peer_id, addr) in cached_peers {
                 // Add to Kademlia first to ensure it's in the routing table
-                self.swarm.behaviour_mut().kademlia.add_address(&peer_id, addr.clone());
+                self.swarm
+                    .behaviour_mut()
+                    .kademlia
+                    .add_address(&peer_id, addr.clone());
                 // Dial
                 if let Err(e) = self.swarm.dial(addr.clone()) {
                     debug!(peer = %peer_id, error = %e, "Failed to dial cached peer");

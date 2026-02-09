@@ -1,16 +1,16 @@
 //! Minimal HTTP API for HardClaw Node
 //! Handles zero-dependency HTTP parsing to avoid bloating the binary.
 
+use serde_json::json;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
-use serde_json::json;
+use tracing::{error, info, warn};
 
-use crate::state::ChainState;
-use crate::mempool::Mempool;
 use crate::crypto::Hash;
+use crate::mempool::Mempool;
+use crate::state::ChainState;
 use crate::types::Address;
 
 const EXPLORER_HTML: &str = include_str!("explorer.html");
@@ -19,7 +19,7 @@ const EXPLORER_HTML: &str = include_str!("explorer.html");
 pub async fn start_api_server(
     state: Arc<RwLock<ChainState>>,
     mempool: Arc<RwLock<Mempool>>,
-    port: u16
+    port: u16,
 ) {
     let addr = format!("0.0.0.0:{}", port);
     info!("Starting Endpoint at http://{}", addr);
@@ -62,7 +62,11 @@ pub async fn start_api_server(
     }
 }
 
-async fn handle_request(req: &str, state: &Arc<RwLock<ChainState>>, mempool: &Arc<RwLock<Mempool>>) -> String {
+async fn handle_request(
+    req: &str,
+    state: &Arc<RwLock<ChainState>>,
+    mempool: &Arc<RwLock<Mempool>>,
+) -> String {
     let first_line = req.lines().next().unwrap_or("");
     let mut parts = first_line.split_whitespace();
     let method = parts.next().unwrap_or("GET");
@@ -80,14 +84,14 @@ async fn handle_request(req: &str, state: &Arc<RwLock<ChainState>>, mempool: &Ar
         let (height, chain_id, tip) = {
             let st = state.read().await;
             (
-                st.height(), 
-                st.chain_id().map(ToString::to_string), 
-                st.tip().map(|b| b.hash.to_string())
+                st.height(),
+                st.chain_id().map(ToString::to_string),
+                st.tip().map(|b| b.hash.to_string()),
             )
         };
-        
+
         let mp_size = mempool.read().await.size();
-        
+
         return json_response(json!({
             "height": height,
             "chain_id": chain_id,
@@ -103,7 +107,7 @@ async fn handle_request(req: &str, state: &Arc<RwLock<ChainState>>, mempool: &Ar
             let height = st.height();
             let mut b = Vec::new();
             let start = height.saturating_sub(9); // Last 10 blocks (inclusive)
-            
+
             for h in (start..=height).rev() {
                 if let Some(block) = st.get_block_at_height(h) {
                     b.push(json!({
@@ -141,23 +145,23 @@ async fn handle_request(req: &str, state: &Arc<RwLock<ChainState>>, mempool: &Ar
 
     if path.starts_with("/api/block/") {
         let query = path.trim_start_matches("/api/block/");
-        
+
         // Try by hash first
         if let Ok(hash) = Hash::from_hex(query) {
             let block = state.read().await.get_block(&hash).cloned();
             if let Some(b) = block {
-                 return json_response(json!(b));
+                return json_response(json!(b));
             }
         }
-        
+
         return json_response(json!({ "error": "Block not found" }));
     }
 
     if path.starts_with("/api/job/") {
-         let _id = path.trim_start_matches("/api/job/");
-         // In a real impl we'd parse UUID, but let's just handle it loosely if needed or assume we query state.jobs map
-         // For now, minimal stub:
-         return json_response(json!({ "error": "Job lookup not fully implemented yet" }));
+        let _id = path.trim_start_matches("/api/job/");
+        // In a real impl we'd parse UUID, but let's just handle it loosely if needed or assume we query state.jobs map
+        // For now, minimal stub:
+        return json_response(json!({ "error": "Job lookup not fully implemented yet" }));
     }
 
     not_found()

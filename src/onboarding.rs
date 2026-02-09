@@ -146,7 +146,7 @@ struct App {
     wallet: Option<Wallet>,
     message: Option<String>,
     env_selection: Option<EnvSelectionState>,
-    start_node: bool,  // True if should start node after TUI exits
+    start_node: bool, // True if should start node after TUI exits
 }
 
 impl App {
@@ -1009,8 +1009,6 @@ impl App {
 
         frame.render_widget(paragraph, centered_rect(90, 85, area));
     }
-
-
 
     fn render_help(&self, frame: &mut Frame, area: Rect) {
         let text = vec![
