@@ -159,6 +159,8 @@ struct NodeConfig {
     genesis_config_path: Option<PathBuf>,
     /// Reset genesis state before starting
     reset_genesis: bool,
+    /// API Port
+    api_port: u16,
 }
 
 impl Default for NodeConfig {
@@ -173,6 +175,7 @@ impl Default for NodeConfig {
             chain_id: None,
             genesis_config_path: None,
             reset_genesis: false,
+            api_port: 9001,
         }
     }
 }
@@ -300,6 +303,14 @@ impl HardClawNode {
     /// Run the node
     async fn run(&mut self) -> anyhow::Result<()> {
         info!("Starting HardClaw node...");
+
+        // Start API Server
+        let api_state = self.state.clone();
+        let api_mempool = self.mempool.clone();
+        let api_port = self.config.api_port;
+        tokio::spawn(async move {
+            hardclaw::api::start_api_server(api_state, api_mempool, api_port).await;
+        });
 
         // Configure network
         let mut network_config = self.config.network.clone();
@@ -506,6 +517,12 @@ fn parse_args(args: Vec<String>) -> NodeCommand {
                     config.port = args[i].parse().unwrap_or(9000);
                 }
             }
+            "--api-port" => {
+                i += 1;
+                if i < args.len() {
+                    config.api_port = args[i].parse().unwrap_or(9001);
+                }
+            }
             "--bootstrap" | "-b" => {
                 i += 1;
                 if i < args.len() {
@@ -562,6 +579,7 @@ fn print_help() {
     println!("NODE OPTIONS:");
     println!("    -v, --verifier              Run as a verifier node");
     println!("    -p, --port <PORT>           Listen port (default: 9000)");
+    println!("    --api-port <PORT>           API port (default: 9001)");
     println!("    -b, --bootstrap <ADDR>      Bootstrap peer address");
     println!("    --external-addr <ADDR>      External address for NAT traversal");
     println!("    --network-debug             Enable verbose network logging");

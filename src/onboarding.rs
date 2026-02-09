@@ -55,7 +55,7 @@ enum AppState {
         runtime_checks: Vec<EnvironmentCheck>,
         ai_check: AIModelCheck,
     },
-    RunNode,
+
     #[allow(dead_code)] // Planned feature - node integration
     NodeRunning,
     Help,
@@ -256,9 +256,7 @@ impl App {
                 self.state = AppState::MainMenu;
                 self.env_selection = None;
             }
-            AppState::RunNode => {
-                self.state = AppState::MainMenu;
-            }
+
             AppState::Help => {
                 self.state = AppState::MainMenu;
             }
@@ -269,6 +267,10 @@ impl App {
                 _ => {}
             },
             AppState::Quit => return true,
+        }
+
+        if matches!(self.state, AppState::Quit) {
+            return true;
         }
 
         false
@@ -472,7 +474,7 @@ impl App {
             } => {
                 self.render_environment_checked(frame, chunks[1], runtime_checks, ai_check);
             }
-            AppState::RunNode => self.render_run_node(frame, chunks[1]),
+
             AppState::Help => self.render_help(frame, chunks[1]),
             AppState::NodeRunning => self.render_node_running(frame, chunks[1]),
             AppState::Quit => {}
@@ -514,7 +516,6 @@ impl App {
             }
             AppState::WalletCreated { .. }
             | AppState::WalletLoaded { .. }
-            | AppState::RunNode
             | AppState::EnvironmentChecked { .. }
             | AppState::Help => "Press any key to continue | q/Ctrl+C: Quit",
             AppState::EnvironmentSelection { .. } => {
@@ -1010,65 +1011,7 @@ impl App {
         frame.render_widget(paragraph, centered_rect(90, 85, area));
     }
 
-    fn render_run_node(&self, frame: &mut Frame, area: Rect) {
-        let wallet_addr = self
-            .wallet
-            .as_ref()
-            .map(|w| w.address().to_string())
-            .unwrap_or_else(|| "unknown".to_string());
 
-        let text = vec![
-            Line::from(""),
-            Line::from(Span::styled(
-                "Run Verifier Node",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            Line::from("To start your verifier node, run:"),
-            Line::from(""),
-            Line::from(Span::styled(
-                "  hardclaw node --verifier",
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            Line::from("Your node will:"),
-            Line::from(Span::styled(
-                "  - Connect to the HardClaw P2P network",
-                Style::default().fg(Color::Cyan),
-            )),
-            Line::from(Span::styled(
-                "  - Verify solutions and earn rewards",
-                Style::default().fg(Color::Cyan),
-            )),
-            Line::from(Span::styled(
-                "  - Participate in consensus",
-                Style::default().fg(Color::Cyan),
-            )),
-            Line::from(""),
-            Line::from("Node address:"),
-            Line::from(Span::styled(
-                format!("  {}...", &wallet_addr[..32.min(wallet_addr.len())]),
-                Style::default().fg(Color::Yellow),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                "Press any key to return...",
-                Style::default().fg(Color::DarkGray),
-            )),
-        ];
-
-        let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan)),
-        );
-
-        frame.render_widget(paragraph, centered_rect(70, 75, area));
-    }
 
     fn render_help(&self, frame: &mut Frame, area: Rect) {
         let text = vec![

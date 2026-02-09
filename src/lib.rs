@@ -59,6 +59,7 @@
     clippy::match_same_arms
 )]
 
+pub mod api;
 pub mod consensus;
 pub mod contracts;
 pub mod crypto;

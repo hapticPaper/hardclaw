@@ -240,7 +240,29 @@ jobs:
             ZONE="${node##*:}"
             echo "=== Deploying to $VM ==="
             gcloud compute scp artifacts/hardclaw $VM:/tmp/hardclaw --zone=$ZONE
-            gcloud compute ssh $VM --zone=$ZONE --command="sudo mv /tmp/hardclaw /usr/local/bin/ && sudo ln -sf hardclaw /usr/local/bin/hardclaw-node && sudo systemctl restart hardclaw"
+            
+            # Run deployment commands on the remote VM
+            gcloud compute ssh $VM --zone=$ZONE --command="
+              set -e
+              
+              # Install binary
+              sudo mv /tmp/hardclaw /usr/local/bin/hardclaw
+              sudo chmod +x /usr/local/bin/hardclaw
+              
+              # Fetch seed phrase
+              echo 'Fetching seed phrase from GSM...'
+              sudo mkdir -p /root/.hardclaw
+              gcloud secrets versions access latest --secret='hardclaw-seed-$VM' --project='hardclaw' | sudo tee /root/.hardclaw/seed_phrase.txt > /dev/null
+              sudo chmod 600 /root/.hardclaw/seed_phrase.txt
+              sudo chown root:root /root/.hardclaw/seed_phrase.txt
+              
+              # Restart service
+              sudo systemctl restart hardclaw
+              
+              # Check status
+              sleep 2
+              sudo systemctl status hardclaw --no-pager
+            "
             echo "Deployed to $VM"
           done
 

@@ -1,0 +1,182 @@
+//! Minimal HTTP API for HardClaw Node
+//! Handles zero-dependency HTTP parsing to avoid bloating the binary.
+
+use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::sync::RwLock;
+use tracing::{info, warn, error};
+use serde_json::json;
+
+use crate::state::ChainState;
+use crate::mempool::Mempool;
+use crate::crypto::Hash;
+use crate::types::Address;
+
+const EXPLORER_HTML: &str = include_str!("explorer.html");
+
+/// Start the API server in a background task
+pub async fn start_api_server(
+    state: Arc<RwLock<ChainState>>,
+    mempool: Arc<RwLock<Mempool>>,
+    port: u16
+) {
+    let addr = format!("0.0.0.0:{}", port);
+    info!("Starting Endpoint at http://{}", addr);
+
+    let listener = match TcpListener::bind(&addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            error!("Failed to bind API port {}: {}", port, e);
+            return;
+        }
+    };
+
+    loop {
+        let (mut socket, _) = match listener.accept().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                warn!("API accept error: {}", e);
+                continue;
+            }
+        };
+
+        let state = state.clone();
+        let mempool = mempool.clone();
+
+        tokio::spawn(async move {
+            let mut buf = [0; 4096];
+            let n = match socket.read(&mut buf).await {
+                Ok(n) if n == 0 => return,
+                Ok(n) => n,
+                Err(_) => return,
+            };
+
+            let request = String::from_utf8_lossy(&buf[..n]);
+            let response = handle_request(&request, &state, &mempool).await;
+
+            if let Err(e) = socket.write_all(response.as_bytes()).await {
+                warn!("Failed to write API response: {}", e);
+            }
+        });
+    }
+}
+
+async fn handle_request(req: &str, state: &Arc<RwLock<ChainState>>, mempool: &Arc<RwLock<Mempool>>) -> String {
+    let first_line = req.lines().next().unwrap_or("");
+    let mut parts = first_line.split_whitespace();
+    let method = parts.next().unwrap_or("GET");
+    let path = parts.next().unwrap_or("/");
+
+    if method != "GET" {
+        return not_found();
+    }
+
+    if path == "/" || path == "/index.html" {
+        return html_response(EXPLORER_HTML);
+    }
+
+    if path == "/api/status" {
+        let st = state.read().await;
+        let mp = mempool.read().await;
+        
+        let height = st.height();
+        let chain_id = st.chain_id();
+        let tip = st.tip().map(|b| b.hash.to_string());
+        
+        // Mempool size
+        let mp_size = mp.size();
+        
+        return json_response(json!({
+            "height": height,
+            "chain_id": chain_id,
+            "tip": tip,
+            "mempool_size": mp_size.jobs + mp_size.solutions,
+            "peer_count": 0 // TODO: Pass peer count if needed
+        }));
+    }
+
+    if path == "/api/blocks/recent" {
+        let st = state.read().await;
+        let height = st.height();
+        let mut blocks = Vec::new();
+        let start = height.saturating_sub(9); // Last 10 blocks (inclusive)
+        
+        for h in (start..=height).rev() {
+            if let Some(block) = st.get_block_at_height(h) {
+                blocks.push(json!({
+                    "height": block.header.height,
+                    "hash": block.hash.to_string(),
+                    "parent_hash": block.header.parent_hash.to_string(),
+                    "tx_count": block.verifications.len(),
+                    "timestamp": block.header.timestamp
+                }));
+            }
+        }
+        return json_response(json!(blocks));
+    }
+
+    if path.starts_with("/api/balance/") {
+        let addr_str = path.trim_start_matches("/api/balance/");
+        // Simple hex parsing for address
+        if let Ok(bytes) = hex::decode(addr_str.trim_start_matches("0x")) {
+            if bytes.len() == 20 {
+                let mut arr = [0u8; 20];
+                arr.copy_from_slice(&bytes);
+                let address = Address::from_bytes(arr);
+                let st = state.read().await;
+                let balance = st.balance_of(&address);
+                return json_response(json!({
+                    "address": addr_str,
+                    "balance": balance.whole_hclaw(),
+                    "raw": balance.raw()
+                }));
+            }
+        }
+        return json_response(json!({ "error": "Invalid address" }));
+    }
+
+    if path.starts_with("/api/block/") {
+        let query = path.trim_start_matches("/api/block/");
+        let st = state.read().await;
+        
+        // Try by hash first
+        if let Ok(hash) = Hash::from_hex(query) {
+            if let Some(block) = st.get_block(&hash) {
+                 return json_response(json!(block));
+            }
+        }
+        
+        return json_response(json!({ "error": "Block not found" }));
+    }
+
+    if path.starts_with("/api/job/") {
+         let _id = path.trim_start_matches("/api/job/");
+         // In a real impl we'd parse UUID, but let's just handle it loosely if needed or assume we query state.jobs map
+         // For now, minimal stub:
+         return json_response(json!({ "error": "Job lookup not fully implemented yet" }));
+    }
+
+    not_found()
+}
+
+fn html_response(body: &str) -> String {
+    format!(
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    )
+}
+
+fn json_response(body: serde_json::Value) -> String {
+    let s = body.to_string();
+    format!(
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
+        s.len(),
+        s
+    )
+}
+
+fn not_found() -> String {
+    "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string()
+}

@@ -2,17 +2,25 @@
 
 PROJECT="hardclaw"
 
-echo "=== Bootstrap Node Peer IDs ==="
+echo "=== HardClaw Bootstrap Node Peer IDs (Actual) ==="
 echo ""
 
-echo "US Node (34.172.212.212):"
-gcloud compute ssh bootstrap-us --project=$PROJECT --zone=us-central1-a --command="sudo journalctl -u hardclaw -n 50 --no-pager 2>/dev/null | grep -oP 'P2P Peer ID: \K[^ ]+' | tail -1" 2>/dev/null
+fetch_peer_id() {
+    local VM=$1
+    local ZONE=$2
+    local IP=$3
+    
+    printf "%-15s (%-14s): " "$VM" "$IP"
+    gcloud compute ssh "$VM" --project="$PROJECT" --zone="$ZONE" --command="sudo journalctl -u hardclaw -n 100 --no-pager 2>/dev/null | grep -oP 'P2P Peer ID: \K[^ ]+' | tail -1" 2>/dev/null || echo "OFFLINE"
+}
+
+fetch_peer_id "bootstrap-us" "us-central1-a" "34.135.209.81"
+fetch_peer_id "bootstrap-eu" "europe-west1-b" "34.140.14.167"
+fetch_peer_id "bootstrap-us2" "us-west1-a" "136.109.62.13"
+fetch_peer_id "bootstrap-asia" "asia-east1-a" "35.221.150.7"
 
 echo ""
-echo "EU Node (34.38.137.200):"
-gcloud compute ssh bootstrap-eu --project=$PROJECT --zone=europe-west1-b --command="sudo journalctl -u hardclaw -n 50 --no-pager 2>/dev/null | grep -oP 'P2P Peer ID: \K[^ ]+' | tail -1" 2>/dev/null
-
+echo "=== DNS TXT Record Requirements (_dnsaddr.<hostname>) ==="
+echo "Format: \"dnsaddr=/dns4/<hostname>/tcp/9000/p2p/<PEER_ID>\""
 echo ""
-echo "Update BOOTSTRAP_NODES in src/network/mod.rs with:"
-echo '"/ip4/34.172.212.212/tcp/9000/p2p/<US_PEER_ID>",'
-echo '"/ip4/34.38.137.200/tcp/9000/p2p/<EU_PEER_ID>",'
+echo "Note: If you are using Cloudflare or similar, ensure proxy is DISABLED (Grey Cloud) for port 9000 to work."

@@ -22,7 +22,11 @@ use libp2p::{
     swarm::{NetworkBehaviour, SwarmEvent},
     tcp, yamux, Multiaddr, PeerId, Swarm,
 };
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
@@ -51,6 +55,94 @@ pub const BOOTSTRAP_NODES: &[&str] = &[
     "/dnsaddr/bootstrap-us2.clawpaper.com",
     "/dnsaddr/bootstrap-asia.clawpaper.com",
 ];
+
+/// DNS seeds for initial node discovery.
+/// These resolve to multiple bootstrap-class nodes via dnsaddr TXT records.
+pub const DNS_SEEDS: &[&str] = &[
+    "/dnsaddr/seed.hardclaw.org",
+    "/dnsaddr/seed.clawpaper.com",
+];
+
+/// Persistent storage for discovered peers to accelerate starts.
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+struct PeerStore {
+    /// Map of stringified PeerId to set of stringified Multiaddrs
+    peers: HashMap<String, HashSet<String>>,
+}
+
+impl PeerStore {
+    /// Load peer store from disk
+    fn load(path: &Path) -> Self {
+        if !path.exists() {
+            return Self::default();
+        }
+
+        match fs::read_to_string(path) {
+            Ok(content) => serde_json::from_str(&content).unwrap_or_else(|e| {
+                warn!(path = ?path, error = %e, "Failed to parse peer cache, starting fresh");
+                Self::default()
+            }),
+            Err(e) => {
+                warn!(path = ?path, error = %e, "Failed to read peer cache");
+                Self::default()
+            }
+        }
+    }
+
+    /// Save peer store to disk
+    fn save(&self, path: &Path) {
+        // Ensure parent directory exists
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+
+        match serde_json::to_string_pretty(self) {
+            Ok(content) => {
+                if let Err(e) = fs::write(path, content) {
+                    warn!(path = ?path, error = %e, "Failed to write peer cache");
+                }
+            }
+            Err(e) => warn!(error = %e, "Failed to serialize peer cache"),
+        }
+    }
+
+    /// Add a peer and its address to the store
+    fn add(&mut self, peer_id: &PeerId, addr: &Multiaddr) {
+        let peer_str = peer_id.to_string();
+        let addr_str = addr.to_string();
+        
+        self.peers.entry(peer_str).or_default().insert(addr_str);
+    }
+
+    /// Get a random selection of peers for bootstrapping
+    fn get_bootstrap_peers(&self, limit: usize) -> Vec<(PeerId, Multiaddr)> {
+        let mut results = Vec::new();
+        let mut rng = rand::thread_rng();
+        
+        // Convert to vec for shuffling
+        let mut peer_ids: Vec<_> = self.peers.keys().collect();
+        peer_ids.shuffle(&mut rng);
+
+        for peer_str in peer_ids.iter().take(limit) {
+            if let Ok(peer_id) = peer_str.parse::<PeerId>() {
+                if let Some(addrs) = self.peers.get(*peer_str) {
+                    for addr_str in addrs {
+                        if let Ok(addr) = addr_str.parse::<Multiaddr>() {
+                            results.push((peer_id, addr));
+                        }
+                    }
+                }
+            }
+        }
+        results
+    }
+    
+    /// Check if the store has exceeded its size limit (e.g. 1MB)
+    fn is_oversized(&self) -> bool {
+        // Simple heuristic: 1000 peers is roughly 1MB of JSON
+        self.peers.len() > 1000
+    }
+}
 
 /// Network message types (serialized for gossipsub)
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -215,6 +307,10 @@ pub struct NetworkNode {
     event_tx: mpsc::Sender<NetworkEvent>,
     /// Topics we're subscribed to
     topics: Topics,
+    /// Path to peer cache file
+    peer_cache_path: PathBuf,
+    /// Persistent peer store
+    peer_store: PeerStore,
 }
 
 /// Gossipsub topics
@@ -329,6 +425,11 @@ impl NetworkNode {
             attestations: IdentTopic::new(TOPIC_ATTESTATIONS),
         };
 
+        // Initialize peer store
+        let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let peer_cache_path = home_dir.join(".hardclaw").join("peers.json");
+        let peer_store = PeerStore::load(&peer_cache_path);
+
         Ok((
             Self {
                 swarm,
@@ -336,6 +437,8 @@ impl NetworkNode {
                 _local_peer: local_peer,
                 event_tx,
                 topics,
+                peer_cache_path,
+                peer_store,
             },
             event_rx,
         ))
@@ -402,12 +505,50 @@ impl NetworkNode {
             "Network node starting"
         );
 
-        // Connect to official bootstrap nodes (resolve dnsaddr TXT records first)
+        // 1. Priority: Try connecting to cached peers from last session
+        let cached_peers = self.peer_store.get_bootstrap_peers(20);
+        if !cached_peers.is_empty() {
+            info!(count = cached_peers.len(), "Attempting to connect to cached peers");
+            for (peer_id, addr) in cached_peers {
+                // Add to Kademlia first to ensure it's in the routing table
+                self.swarm.behaviour_mut().kademlia.add_address(&peer_id, addr.clone());
+                // Dial
+                if let Err(e) = self.swarm.dial(addr.clone()) {
+                    debug!(peer = %peer_id, error = %e, "Failed to dial cached peer");
+                }
+            }
+        }
+
+        // 2. Secondary: Resolve DNS seeds for fresh bootstrap nodes
         if self.config.use_official_bootstrap {
-            for addr_str in BOOTSTRAP_NODES {
-                for resolved in &resolve_dnsaddr(addr_str).await {
-                    if let Err(e) = self.dial_and_add_to_dht(resolved) {
-                        warn!(addr = %resolved, error = %e, "Failed to connect to official bootstrap node");
+            let mut seeds = DNS_SEEDS.to_vec();
+            let mut rng = rand::thread_rng();
+            seeds.shuffle(&mut rng);
+
+            for seed in seeds {
+                info!(seed = %seed, "Resolving DNS seed");
+                let resolved = resolve_dnsaddr(seed).await;
+                for addr_str in resolved {
+                    if let Err(e) = self.dial_and_add_to_dht(&addr_str) {
+                        debug!(addr = %addr_str, error = %e, "Failed to connect to node from DNS seed");
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback: Official hardcoded bootstrap nodes (if still struggling)
+        // We check peer count after a short delay or just try them anyway as fallback
+        if self.peer_count() < 2 && self.config.use_official_bootstrap {
+            info!("Low peer count, falling back to hardcoded bootstrap nodes");
+            let mut fallback_nodes = BOOTSTRAP_NODES.to_vec();
+            let mut rng = rand::thread_rng();
+            fallback_nodes.shuffle(&mut rng);
+
+            for addr_str in fallback_nodes {
+                let resolved = resolve_dnsaddr(addr_str).await;
+                for addr in resolved {
+                    if let Err(e) = self.dial_and_add_to_dht(&addr) {
+                        debug!(addr = %addr, error = %e, "Failed to connect to fallback bootstrap node");
                     }
                 }
             }
@@ -469,6 +610,8 @@ impl NetworkNode {
     pub async fn run(&mut self) {
         // Periodic DHT refresh
         let mut dht_refresh_interval = tokio::time::interval(Duration::from_secs(300));
+        // Periodic PeerStore save
+        let mut peer_save_interval = tokio::time::interval(Duration::from_secs(600));
 
         loop {
             tokio::select! {
@@ -480,6 +623,11 @@ impl NetworkNode {
                     if let Err(e) = self.swarm.behaviour_mut().kademlia.bootstrap() {
                         debug!(error = ?e, "DHT bootstrap refresh failed (may be normal if no peers)");
                     }
+                }
+                _ = peer_save_interval.tick() => {
+                    // Periodic save of discovered peers
+                    info!(count = self.peer_store.peers.len(), "Saving peer cache to disk");
+                    self.peer_store.save(&self.peer_cache_path);
                 }
             }
         }
@@ -553,7 +701,9 @@ impl NetworkNode {
                     self.swarm
                         .behaviour_mut()
                         .kademlia
-                        .add_address(&peer_id, addr);
+                        .add_address(&peer_id, addr.clone());
+                    // Store peer for persistence
+                    self.peer_store.add(&peer_id, &addr);
                 }
             }
 
@@ -579,11 +729,13 @@ impl NetworkNode {
                     self.swarm
                         .behaviour_mut()
                         .kademlia
-                        .add_address(&peer_id, addr);
+                        .add_address(&peer_id, addr.clone());
                     self.swarm
                         .behaviour_mut()
                         .gossipsub
                         .add_explicit_peer(&peer_id);
+                    // Store peer for persistence
+                    self.peer_store.add(&peer_id, &addr);
                 }
             }
 
@@ -604,7 +756,9 @@ impl NetworkNode {
                     self.swarm
                         .behaviour_mut()
                         .kademlia
-                        .add_address(&peer_id, address);
+                        .add_address(&peer_id, address.clone());
+                    // Store peer for persistence
+                    self.peer_store.add(&peer_id, &address);
                     // Trigger a bootstrap now that we have a peer
                     if let Err(e) = self.swarm.behaviour_mut().kademlia.bootstrap() {
                         debug!(error = ?e, "Bootstrap attempt after connection failed (may happen if only 1 peer)");
