@@ -71,13 +71,15 @@ dirs = "5.0"
 pyo3 = { version = "0.20", features = ["auto-initialize", "abi3-py38"], optional = true }
 deno_core = "0.258"
 sha256 = "1.5"
-wasmer = "4.2"
+wasmer = { version = "4.2", optional = true }
 
 [features]
 default = []
 # Enable embedded Python via PyO3 (requires Python at build time)
 # Without this, Python verification uses subprocess
 embedded-python = ["pyo3"]
+# Enable WASM smart contract execution via Wasmer
+wasm-contracts = ["wasmer"]
 
 [dev-dependencies]
 criterion = "0.5"

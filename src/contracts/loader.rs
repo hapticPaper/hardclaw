@@ -3,6 +3,7 @@
 //! Handles loading contracts from bytecode, enforcing versioning,
 //! and routing to the appropriate runtime (WASM vs Native).
 
+#[cfg(feature = "wasm-contracts")]
 use crate::contracts::wasm::WasmContract;
 use crate::contracts::Contract;
 use crate::contracts::ContractError;
@@ -18,6 +19,7 @@ pub trait ContractLoader: Send + Sync {
 /// The main contract loader that delegates to specific runtimes
 pub struct UniversalLoader {
     native_loader: NativeLoader,
+    #[cfg(feature = "wasm-contracts")]
     wasm_loader: WasmLoader,
 }
 
@@ -26,6 +28,7 @@ impl UniversalLoader {
     pub fn new() -> Self {
         Self {
             native_loader: NativeLoader {},
+            #[cfg(feature = "wasm-contracts")]
             wasm_loader: WasmLoader {},
         }
     }
@@ -45,8 +48,16 @@ impl ContractLoader for UniversalLoader {
         }
 
         // Check for WASM magic bytes (\0asm)
+        #[cfg(feature = "wasm-contracts")]
         if code.starts_with(&[0x00, 0x61, 0x73, 0x6d]) {
             return self.wasm_loader.load(id, code);
+        }
+
+        #[cfg(not(feature = "wasm-contracts"))]
+        if code.starts_with(&[0x00, 0x61, 0x73, 0x6d]) {
+            return Err(ContractError::ExecutionFailed(
+                "WASM contracts require the 'wasm-contracts' feature".to_string(),
+            ));
         }
 
         Err(ContractError::ExecutionFailed(
@@ -78,8 +89,10 @@ impl ContractLoader for NativeLoader {
 }
 
 /// Loads WASM contracts
+#[cfg(feature = "wasm-contracts")]
 struct WasmLoader;
 
+#[cfg(feature = "wasm-contracts")]
 impl ContractLoader for WasmLoader {
     fn load(&self, id: Id, code: &[u8]) -> ContractResult<Box<dyn Contract>> {
         Ok(Box::new(WasmContract::new(id, code.to_vec())))

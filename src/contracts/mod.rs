@@ -27,6 +27,7 @@ pub mod loader;
 pub mod processor;
 pub mod state;
 pub mod transaction;
+#[cfg(feature = "wasm-contracts")]
 pub mod wasm;
 
 use crate::crypto::Hash;
