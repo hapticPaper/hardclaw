@@ -13,6 +13,11 @@ use serde::{Deserialize, Serialize};
 use crate::crypto::{hash_data, Hash, PublicKey};
 use crate::types::{Address, HclawAmount, Timestamp};
 
+/// Expected genesis block hash for mainnet.
+/// Set to Hash::ZERO to disable validation (pre-mainnet).
+/// Once mainnet genesis is finalized, hardcode the real hash here.
+pub const EXPECTED_GENESIS_HASH: Hash = Hash::ZERO;
+
 /// Duration of the bootstrap period (30 days in milliseconds)
 pub const BOOTSTRAP_DURATION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 

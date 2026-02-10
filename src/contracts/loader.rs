@@ -73,13 +73,12 @@ impl ContractLoader for NativeLoader {
     fn load(&self, _id: Id, code: &[u8]) -> ContractResult<Box<dyn Contract>> {
         let marker = String::from_utf8_lossy(code);
         match marker.trim() {
-            "native:genesis_bounty_v1" => {
-                // Return a new instance of the GenesisBountyContract
-                // Note: The start_time here is just a default; INIT logic will set real values
-                Ok(Box::new(
-                    crate::contracts::genesis_bounty::GenesisBountyContract::new(0),
-                ))
-            }
+            "native:genesis_bounty_v1" => Ok(Box::new(
+                crate::contracts::genesis_bounty::GenesisBountyContract::new(0),
+            )),
+            "native:governance_v1" => Ok(Box::new(
+                crate::contracts::governance::GovernanceContract::new(),
+            )),
             _ => Err(ContractError::ExecutionFailed(format!(
                 "Unknown native contract: {}",
                 marker

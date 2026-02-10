@@ -339,35 +339,51 @@ impl HardClawNode {
 
                 info!("Creating genesis block with config: {:?}", genesis_config);
 
-                // Serialize config
                 let init_data = bincode::serialize(&genesis_config)
                     .expect("failed to serialize genesis config");
+                let deployer = Address::from_public_key(&authority_key);
 
-                // Build the deploy system job
-                let deploy_kind = SystemJobKind::DeployContract {
-                    code: b"native:genesis_bounty_v1".to_vec(),
-                    init_data: init_data.clone(),
-                    deployer: Address::from_public_key(&authority_key),
-                };
-
-                // Create DEPLOY job — contract on_deploy initializes storage only.
-                // Initial balances come from genesis_alloc in the block.
-                let genesis_job = JobPacket::new(
+                let bounty_job = JobPacket::new(
                     JobType::System,
                     authority_key.clone(),
-                    init_data,
+                    init_data.clone(),
                     "Deploy genesis bounty contract".to_string(),
                     HclawAmount::ZERO,
                     HclawAmount::ZERO,
                     VerificationSpec::SystemOperation {
-                        kind: deploy_kind,
+                        kind: SystemJobKind::DeployContract {
+                            code: b"native:genesis_bounty_v1".to_vec(),
+                            init_data,
+                            deployer,
+                        },
                         expected_state_hash: hardclaw::crypto::Hash::ZERO,
                     },
-                    0, // No TTL for genesis
+                    0,
                 );
 
-                let genesis =
-                    Block::genesis_with_job(self.keypair.public_key().clone(), genesis_job, alloc);
+                let governance_job = JobPacket::new(
+                    JobType::System,
+                    authority_key.clone(),
+                    Vec::new(),
+                    "Deploy governance contract".to_string(),
+                    HclawAmount::ZERO,
+                    HclawAmount::ZERO,
+                    VerificationSpec::SystemOperation {
+                        kind: SystemJobKind::DeployContract {
+                            code: b"native:governance_v1".to_vec(),
+                            init_data: Vec::new(),
+                            deployer,
+                        },
+                        expected_state_hash: hardclaw::crypto::Hash::ZERO,
+                    },
+                    0,
+                );
+
+                let genesis = Block::genesis_with_jobs(
+                    self.keypair.public_key().clone(),
+                    vec![bounty_job, governance_job],
+                    alloc,
+                );
                 state.apply_block(genesis)?;
             } else {
                 let _chain_id = self
@@ -429,35 +445,50 @@ impl HardClawNode {
                     bootstrap_end: now + 30 * 24 * 3600,
                 };
 
-                // Serialize config
                 let init_data = bincode::serialize(&genesis_config)
                     .expect("failed to serialize genesis config");
 
-                // Build the deploy system job
-                let deploy_kind = SystemJobKind::DeployContract {
-                    code: b"native:genesis_bounty_v1".to_vec(),
-                    init_data: init_data.clone(),
-                    deployer: Address::from_public_key(&authority_key),
-                };
-
-                // Create DEPLOY job — contract on_deploy initializes storage only.
-                // Initial balances come from genesis_alloc in the block.
-                let genesis_job = JobPacket::new(
+                let bounty_job = JobPacket::new(
                     JobType::System,
                     authority_key.clone(),
-                    init_data,
+                    init_data.clone(),
                     "Deploy genesis bounty contract".to_string(),
                     HclawAmount::ZERO,
                     HclawAmount::ZERO,
                     VerificationSpec::SystemOperation {
-                        kind: deploy_kind,
+                        kind: SystemJobKind::DeployContract {
+                            code: b"native:genesis_bounty_v1".to_vec(),
+                            init_data,
+                            deployer: my_address,
+                        },
                         expected_state_hash: hardclaw::crypto::Hash::ZERO,
                     },
-                    0, // No TTL for genesis
+                    0,
                 );
 
-                let genesis =
-                    Block::genesis_with_job(self.keypair.public_key().clone(), genesis_job, alloc);
+                let governance_job = JobPacket::new(
+                    JobType::System,
+                    authority_key.clone(),
+                    Vec::new(),
+                    "Deploy governance contract".to_string(),
+                    HclawAmount::ZERO,
+                    HclawAmount::ZERO,
+                    VerificationSpec::SystemOperation {
+                        kind: SystemJobKind::DeployContract {
+                            code: b"native:governance_v1".to_vec(),
+                            init_data: Vec::new(),
+                            deployer: my_address,
+                        },
+                        expected_state_hash: hardclaw::crypto::Hash::ZERO,
+                    },
+                    0,
+                );
+
+                let genesis = Block::genesis_with_jobs(
+                    self.keypair.public_key().clone(),
+                    vec![bounty_job, governance_job],
+                    alloc,
+                );
                 state.apply_block(genesis)?;
             }
         }

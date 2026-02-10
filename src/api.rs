@@ -62,6 +62,7 @@ pub async fn start_api_server(
     }
 }
 
+#[allow(clippy::significant_drop_tightening)]
 async fn handle_request(
     req: &str,
     state: &Arc<RwLock<ChainState>>,
@@ -113,7 +114,7 @@ async fn handle_request(
 
                 for h in (start..=max_block).rev() {
                     if let Some(block) = st.get_block_at_height(h) {
-                        let has_genesis = block.genesis_job.is_some();
+                        let has_genesis = !block.genesis_jobs.is_empty();
                         b.push(json!({
                             "height": block.header.height,
                             "hash": block.hash.to_string(),
@@ -187,22 +188,26 @@ async fn handle_request(
         let result = {
             let st = state.read().await;
             st.get_block_at_height(0).map(|block| {
-                let genesis_job = block.genesis_job.as_ref().map(|job| {
-                    json!({
-                        "id": job.id.to_string(),
-                        "description": job.description,
-                        "job_type": format!("{:?}", job.job_type),
-                        "status": format!("{:?}", job.status),
-                        "bounty": job.bounty.whole_hclaw(),
-                        "created_at": job.created_at
+                let genesis_jobs: Vec<_> = block
+                    .genesis_jobs
+                    .iter()
+                    .map(|job| {
+                        json!({
+                            "id": job.id.to_string(),
+                            "description": job.description,
+                            "job_type": format!("{:?}", job.job_type),
+                            "status": format!("{:?}", job.status),
+                            "bounty": job.bounty.whole_hclaw(),
+                            "created_at": job.created_at
+                        })
                     })
-                });
+                    .collect();
                 json!({
                     "height": 0,
                     "hash": block.hash.to_string(),
                     "proposer": block.header.proposer.to_hex(),
                     "timestamp": block.header.timestamp,
-                    "genesis_job": genesis_job
+                    "genesis_jobs": genesis_jobs
                 })
             })
         };
@@ -210,6 +215,24 @@ async fn handle_request(
             Some(data) => json_response(data),
             None => json_response(json!({ "error": "Genesis block not found" })),
         };
+    }
+
+    // Contracts endpoint - list deployed contracts
+    if path == "/api/contracts" {
+        let st = state.read().await;
+        let registry = st.contract_registry();
+        let contracts: Vec<_> = registry
+            .list()
+            .iter()
+            .map(|id| {
+                let name = registry
+                    .get_contract(id)
+                    .map(|c| c.name().to_string())
+                    .unwrap_or_default();
+                json!({ "id": id.to_string(), "name": name })
+            })
+            .collect();
+        return json_response(json!({ "contracts": contracts }));
     }
 
     not_found()

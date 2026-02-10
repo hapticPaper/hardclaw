@@ -336,12 +336,18 @@
                 header.appendChild(hashSpan);
                 card.appendChild(header);
 
-                if (data.genesis_job) {
-                    const desc = document.createElement('p');
-                    desc.style.color = 'var(--text-color)';
-                    desc.style.marginBottom = '15px';
-                    desc.textContent = data.genesis_job.description || 'Genesis bootstrap job';
-                    card.appendChild(desc);
+                if (data.genesis_jobs && data.genesis_jobs.length > 0) {
+                    const contractsList = document.createElement('div');
+                    contractsList.style.marginBottom = '15px';
+
+                    data.genesis_jobs.forEach(function(job) {
+                        const jobDiv = document.createElement('div');
+                        jobDiv.style.color = 'var(--text-color)';
+                        jobDiv.style.marginBottom = '5px';
+                        jobDiv.innerHTML = '<span style="color:var(--accent-color)">' + (job.description || 'System job') + '</span>';
+                        contractsList.appendChild(jobDiv);
+                    });
+                    card.appendChild(contractsList);
 
                     const grid = document.createElement('div');
                     grid.style.display = 'grid';
@@ -350,25 +356,25 @@
                     grid.style.fontSize = '0.9em';
                     grid.style.color = '#8b949e';
 
-                    const bountyDiv = document.createElement('div');
-                    bountyDiv.textContent = 'BOUNTY: ';
-                    const bountyVal = document.createElement('span');
-                    bountyVal.style.color = 'var(--accent-color)';
-                    bountyVal.textContent = data.genesis_job.bounty + ' HCLAW';
-                    bountyDiv.appendChild(bountyVal);
+                    const contractsDiv = document.createElement('div');
+                    contractsDiv.textContent = 'CONTRACTS: ';
+                    const contractsVal = document.createElement('span');
+                    contractsVal.style.color = 'var(--accent-color)';
+                    contractsVal.textContent = data.genesis_jobs.length;
+                    contractsDiv.appendChild(contractsVal);
 
                     const statusDiv = document.createElement('div');
                     statusDiv.textContent = 'STATUS: ';
                     const statusVal = document.createElement('span');
                     statusVal.style.color = 'var(--accent-color)';
-                    statusVal.textContent = data.genesis_job.status || 'Active';
+                    statusVal.textContent = data.genesis_jobs[0].status || 'Active';
                     statusDiv.appendChild(statusVal);
 
                     const typeDiv = document.createElement('div');
                     typeDiv.textContent = 'TYPE: ';
                     const typeVal = document.createElement('span');
                     typeVal.style.color = 'var(--accent-color)';
-                    typeVal.textContent = data.genesis_job.job_type || 'System';
+                    typeVal.textContent = 'System';
                     typeDiv.appendChild(typeVal);
 
                     const proposerDiv = document.createElement('div');
@@ -378,7 +384,7 @@
                     proposerVal.textContent = data.proposer ? data.proposer.substring(0, 16) + '...' : '-';
                     proposerDiv.appendChild(proposerVal);
 
-                    grid.appendChild(bountyDiv);
+                    grid.appendChild(contractsDiv);
                     grid.appendChild(statusDiv);
                     grid.appendChild(typeDiv);
                     grid.appendChild(proposerDiv);

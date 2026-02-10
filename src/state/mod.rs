@@ -209,36 +209,50 @@ impl ChainState {
                 );
             }
 
-            // 2. Deploy genesis contract (initializes contract storage only — no credits)
-            if let Some(ref job) = block.genesis_job {
-                if matches!(job.job_type, JobType::System) {
-                    if let VerificationSpec::SystemOperation {
-                        kind:
-                            SystemJobKind::DeployContract {
-                                code,
-                                init_data,
-                                deployer: _,
-                            },
-                        ..
-                    } = &job.verification
-                    {
-                        info!("Deploying genesis contract...");
-                        let tx_kind = crate::contracts::transaction::TransactionKind::Deploy {
-                            code: code.clone(),
-                            init_data: init_data.clone(),
-                            deployer: job.requester_address,
-                        };
+            // 2. Deploy genesis contracts (initializes contract storage only — no credits)
+            for job in &block.genesis_jobs {
+                if !matches!(job.job_type, JobType::System) {
+                    continue;
+                }
+                if let VerificationSpec::SystemOperation {
+                    kind:
+                        SystemJobKind::DeployContract {
+                            code,
+                            init_data,
+                            deployer: _,
+                        },
+                    ..
+                } = &job.verification
+                {
+                    info!("Deploying genesis contract: {}", job.description);
+                    let tx_kind = crate::contracts::transaction::TransactionKind::Deploy {
+                        code: code.clone(),
+                        init_data: init_data.clone(),
+                        deployer: job.requester_address,
+                    };
 
-                        if let Err(e) = self.tx_processor.process_transaction(
-                            &tx_kind,
-                            &mut self.accounts,
-                            &mut self.contract_storage,
-                        ) {
-                            tracing::error!("Failed to deploy genesis contract: {}", e);
-                            return Err(StateError::InvalidParent);
-                        }
+                    if let Err(e) = self.tx_processor.process_transaction(
+                        &tx_kind,
+                        &mut self.accounts,
+                        &mut self.contract_storage,
+                    ) {
+                        tracing::error!("Failed to deploy genesis contract: {}", e);
+                        return Err(StateError::InvalidParent);
                     }
                 }
+            }
+        }
+
+        // Validate genesis hash for production chains
+        if block.header.height == 0 {
+            let expected = crate::genesis::EXPECTED_GENESIS_HASH;
+            if expected != Hash::ZERO && block.hash != expected {
+                tracing::error!(
+                    "Genesis hash mismatch: expected {}, got {}",
+                    expected,
+                    block.hash
+                );
+                return Err(StateError::GenesisHashMismatch);
             }
         }
 
@@ -361,6 +375,12 @@ impl ChainState {
         )
     }
 
+    /// Get the contract registry (for API contract listing)
+    #[must_use]
+    pub fn contract_registry(&self) -> &crate::contracts::ContractRegistry {
+        self.tx_processor.registry()
+    }
+
     /// Get contract storage value
     #[must_use]
     pub fn get_contract_storage(&self, contract: &Address, key: &[u8]) -> Option<Vec<u8>> {
@@ -398,6 +418,9 @@ pub enum StateError {
     /// Account not found
     #[error("account not found")]
     AccountNotFound,
+    /// Genesis block hash doesn't match expected canonical hash
+    #[error("genesis hash mismatch")]
+    GenesisHashMismatch,
 }
 
 #[cfg(test)]
