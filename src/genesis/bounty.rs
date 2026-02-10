@@ -1,13 +1,12 @@
-//! Genesis bounty system - 90-day parabolic payout curve.
+//! Genesis bounty system — 90-day parabolic payout curve.
 //!
-//! Replaces static vesting with a daily bounty pool distributed via
-//! a slot-machine mechanism to active participants.
+//! Every hour, 1/24th of the day's budget is distributed evenly among
+//! eligible staked verifiers who attested to blocks in the prior hour.
+//! The daily budget follows a parabolic curve: day² × (90 - day).
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
-use crate::crypto::{hash_data, Hash};
-use crate::types::{Address, HclawAmount, Timestamp};
+use crate::types::{Address, HclawAmount};
 
 /// Total bounty pool distributed over 90 days
 pub const BOUNTY_POOL: u64 = 2_000_000; // HCLAW
@@ -22,7 +21,16 @@ pub const MIN_PUBLIC_NODES: u32 = 5;
 /// Calculated as: Σ(day² × (90 - day)) = 5,466,825
 pub const TOTAL_WEIGHT: u128 = 5_466_825;
 
-/// Parab olic weight function: w(day) = day² × (90 - day)
+/// One hour in milliseconds
+pub const HOUR_MS: u64 = 3_600_000;
+
+/// Number of hours per day
+pub const HOURS_PER_DAY: u64 = 24;
+
+/// Total epochs in the bounty period (90 days × 24 hours)
+pub const TOTAL_EPOCHS: u64 = BOUNTY_DAYS as u64 * HOURS_PER_DAY;
+
+/// Parabolic weight function: w(day) = day² × (90 - day)
 ///
 /// Properties:
 /// - Starts at 0 (day 0)
@@ -48,59 +56,71 @@ pub fn calculate_daily_budget(day: u8) -> HclawAmount {
     HclawAmount::from_raw(daily_raw)
 }
 
-/// Slot machine payout - determines if a block wins bounty
+/// Calculate the hourly budget for a given day (1/24th of daily budget).
+/// Integer division means up to 23 raw units of dust per day — acceptable.
 #[must_use]
-pub fn is_winner_block(block_hash: Hash, day: u8, threshold: u32) -> bool {
-    let mut seed_data = block_hash.as_bytes().to_vec();
-    seed_data.extend_from_slice(b"bounty");
-    seed_data.extend_from_slice(&day.to_le_bytes());
-
-    let seed = hash_data(&seed_data);
-    let roll = u32::from_le_bytes([
-        seed.as_bytes()[0],
-        seed.as_bytes()[1],
-        seed.as_bytes()[2],
-        seed.as_bytes()[3],
-    ]);
-
-    roll < threshold
+pub fn calculate_hourly_budget(day: u8) -> HclawAmount {
+    let daily = calculate_daily_budget(day);
+    HclawAmount::from_raw(daily.raw() / HOURS_PER_DAY as u128)
 }
 
-/// Distribute bounty proportionally among contributors
-pub fn distribute_bounty(
-    contributors: Vec<(Address, u32)>,
-    amount: HclawAmount,
+/// Compute the bounty epoch (hour index since start) from a timestamp.
+/// Returns `None` if the timestamp is before start or beyond the 90-day period.
+#[must_use]
+pub fn compute_epoch(timestamp: u64, start_time: u64) -> Option<u64> {
+    if timestamp < start_time {
+        return None;
+    }
+    let elapsed_ms = timestamp - start_time;
+    let epoch = elapsed_ms / HOUR_MS;
+    if epoch >= TOTAL_EPOCHS {
+        None
+    } else {
+        Some(epoch)
+    }
+}
+
+/// Get the day number (0-89) for a given epoch.
+#[must_use]
+pub fn day_from_epoch(epoch: u64) -> u8 {
+    (epoch / HOURS_PER_DAY) as u8
+}
+
+/// Distribute an amount evenly among recipients.
+/// Any remainder (dust) is not distributed — it gets burned at period end.
+pub fn distribute_evenly(
+    recipients: &[Address],
+    total: HclawAmount,
 ) -> Vec<(Address, HclawAmount)> {
-    if contributors.is_empty() {
+    if recipients.is_empty() {
         return Vec::new();
     }
-
-    let total_contributions: u32 = contributors.iter().map(|(_, count)| *count).sum();
-    if total_contributions == 0 {
+    let per_recipient = HclawAmount::from_raw(total.raw() / recipients.len() as u128);
+    if per_recipient.raw() == 0 {
         return Vec::new();
     }
-
-    contributors
-        .into_iter()
-        .map(|(addr, count)| {
-            let share = amount.raw() * count as u128 / total_contributions as u128;
-            (addr, HclawAmount::from_raw(share))
-        })
-        .filter(|(_, amt)| amt.raw() > 0)
+    recipients
+        .iter()
+        .map(|addr| (*addr, per_recipient))
         .collect()
 }
 
-/// Tracks bounty distributions over the 90-day period
+/// Tracks bounty distributions over the 90-day period.
+///
+/// Epochs are distributed sequentially (0, 1, 2, ..., 2159).
+/// Each epoch represents one hour. The contract enforces sequential
+/// distribution — epoch N can only be distributed if N-1 was already done.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BountyTracker {
-    /// Daily payouts so far (day → amount paid)
-    pub daily_paid: HashMap<u8, HclawAmount>,
-    /// Total amount paid out
+    /// Last distributed epoch (hour index since start).
+    /// `u64::MAX` means no distribution has occurred yet.
+    pub last_distributed_epoch: u64,
+    /// Total amount paid out across all epochs
     pub total_paid: HclawAmount,
-    /// Total amount withheld and burned (low activity)
+    /// Total amount burned (skipped hours, dust, inactivity)
     pub total_burned: HclawAmount,
-    /// Bounty period start timestamp
-    pub start_time: Timestamp,
+    /// Bounty period start timestamp (milliseconds)
+    pub start_time: u64,
     /// Number of public (non-bootstrap) nodes
     pub public_node_count: u32,
 }
@@ -108,9 +128,9 @@ pub struct BountyTracker {
 impl BountyTracker {
     /// Create a new bounty tracker
     #[must_use]
-    pub fn new(start_time: Timestamp) -> Self {
+    pub fn new(start_time: u64) -> Self {
         Self {
-            daily_paid: HashMap::new(),
+            last_distributed_epoch: u64::MAX,
             total_paid: HclawAmount::ZERO,
             total_burned: HclawAmount::ZERO,
             start_time,
@@ -118,18 +138,13 @@ impl BountyTracker {
         }
     }
 
-    /// Get the current day number (0-89)
+    /// Check if the given epoch is the next one to distribute.
     #[must_use]
-    pub fn current_day(&self, now: Timestamp) -> Option<u8> {
-        if now < self.start_time {
-            return None;
-        }
-        let elapsed = now - self.start_time;
-        let days = (elapsed / (24 * 60 * 60 * 1000)) as u8;
-        if days >= BOUNTY_DAYS {
-            None
+    pub fn is_next_epoch(&self, epoch: u64) -> bool {
+        if self.last_distributed_epoch == u64::MAX {
+            epoch == 0
         } else {
-            Some(days)
+            epoch == self.last_distributed_epoch + 1
         }
     }
 
@@ -139,31 +154,13 @@ impl BountyTracker {
         self.public_node_count >= MIN_PUBLIC_NODES
     }
 
-    /// Get amount paid today
-    #[must_use]
-    pub fn paid_today(&self, day: u8) -> HclawAmount {
-        self.daily_paid
-            .get(&day)
-            .copied()
-            .unwrap_or(HclawAmount::ZERO)
-    }
-
-    /// Get remaining budget for today
-    #[must_use]
-    pub fn remaining_today(&self, day: u8) -> HclawAmount {
-        let budget = calculate_daily_budget(day);
-        let paid = self.paid_today(day);
-        budget.saturating_sub(paid)
-    }
-
-    /// Record a payout
-    pub fn record_payout(&mut self, day: u8, amount: HclawAmount) {
-        let current = self.daily_paid.entry(day).or_insert(HclawAmount::ZERO);
-        *current = current.saturating_add(amount);
+    /// Record a distribution for an epoch
+    pub fn record_distribution(&mut self, epoch: u64, amount: HclawAmount) {
+        self.last_distributed_epoch = epoch;
         self.total_paid = self.total_paid.saturating_add(amount);
     }
 
-    /// Record withheld bounty (burned due to low activity)
+    /// Record burned bounty (skipped hours, dust, inactivity)
     pub fn record_burn(&mut self, amount: HclawAmount) {
         self.total_burned = self.total_burned.saturating_add(amount);
     }
@@ -173,13 +170,7 @@ impl BountyTracker {
         self.public_node_count = count;
     }
 
-    /// Check if the bounty period has ended
-    #[must_use]
-    pub fn is_period_ended(&self, now: Timestamp) -> bool {
-        self.current_day(now).is_none() && now >= self.start_time
-    }
-
-    /// Get total remaining (unpaid) bounty
+    /// Get total remaining (unpaid, unburned) bounty
     #[must_use]
     pub fn total_remaining(&self) -> HclawAmount {
         let pool = HclawAmount::from_hclaw(BOUNTY_POOL);
@@ -199,7 +190,6 @@ mod tests {
             total += calculate_daily_budget(day).raw();
         }
         let pool = HclawAmount::from_hclaw(BOUNTY_POOL).raw();
-        // Allow for small rounding error (< 1 HCLAW)
         let diff = if total > pool {
             total - pool
         } else {
@@ -217,7 +207,6 @@ mod tests {
         let peak_day = 60;
         let peak_amount = calculate_daily_budget(peak_day);
 
-        // Check that day 60 is >= all other days
         for day in 0..BOUNTY_DAYS {
             let amount = calculate_daily_budget(day);
             if day != peak_day {
@@ -232,73 +221,145 @@ mod tests {
     #[test]
     fn test_bounty_starts_and_ends_at_zero() {
         assert_eq!(calculate_daily_budget(0).raw(), 0);
-        assert!(calculate_daily_budget(89).raw() > 0); // Last valid day is still non-zero
-        assert_eq!(calculate_daily_budget(90).raw(), 0); // Out of range
+        assert!(calculate_daily_budget(89).raw() > 0);
+        assert_eq!(calculate_daily_budget(90).raw(), 0);
     }
 
     #[test]
     fn test_weight_formula() {
-        assert_eq!(calculate_daily_weight(0), 0); // 0² × 90 = 0
-        assert_eq!(calculate_daily_weight(10), 8_000); // 10² × 80 = 8,000
-        assert_eq!(calculate_daily_weight(60), 108_000); // 60² × 30 = 108,000
-        assert_eq!(calculate_daily_weight(89), 7_921); // 89² × 1 = 7,921
-        assert_eq!(calculate_daily_weight(90), 0); // Out of range
+        assert_eq!(calculate_daily_weight(0), 0);
+        assert_eq!(calculate_daily_weight(10), 8_000);
+        assert_eq!(calculate_daily_weight(60), 108_000);
+        assert_eq!(calculate_daily_weight(89), 7_921);
+        assert_eq!(calculate_daily_weight(90), 0);
     }
 
     #[test]
-    fn test_distribute_bounty_proportional() {
-        let contributors = vec![
-            (Address::from_bytes([1; 20]), 10), // 50%
-            (Address::from_bytes([2; 20]), 6),  // 30%
-            (Address::from_bytes([3; 20]), 4),  // 20%
+    fn test_hourly_budget_sums_to_daily() {
+        for day in 1..BOUNTY_DAYS {
+            let daily = calculate_daily_budget(day).raw();
+            let hourly = calculate_hourly_budget(day).raw();
+            let hourly_total = hourly * HOURS_PER_DAY as u128;
+            // Integer division dust: at most 23 raw units lost
+            let diff = daily - hourly_total;
+            assert!(
+                diff < HOURS_PER_DAY as u128,
+                "Day {day}: daily={daily}, hourly*24={hourly_total}, diff={diff}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_hourly_budget_day_zero_is_zero() {
+        assert_eq!(calculate_hourly_budget(0).raw(), 0);
+    }
+
+    #[test]
+    fn test_compute_epoch_boundaries() {
+        let start = 1_000_000u64;
+
+        assert_eq!(compute_epoch(start, start), Some(0));
+        assert_eq!(compute_epoch(start + HOUR_MS - 1, start), Some(0));
+        assert_eq!(compute_epoch(start + HOUR_MS, start), Some(1));
+        assert_eq!(compute_epoch(start + 24 * HOUR_MS, start), Some(24)); // day 1 hour 0
+        assert_eq!(
+            compute_epoch(start + TOTAL_EPOCHS * HOUR_MS - 1, start),
+            Some(TOTAL_EPOCHS - 1)
+        );
+        assert_eq!(compute_epoch(start + TOTAL_EPOCHS * HOUR_MS, start), None); // beyond 90 days
+        assert_eq!(compute_epoch(start - 1, start), None); // before start
+    }
+
+    #[test]
+    fn test_day_from_epoch() {
+        assert_eq!(day_from_epoch(0), 0);
+        assert_eq!(day_from_epoch(23), 0);
+        assert_eq!(day_from_epoch(24), 1);
+        assert_eq!(day_from_epoch(48), 2);
+        assert_eq!(day_from_epoch(TOTAL_EPOCHS - 1), 89);
+    }
+
+    #[test]
+    fn test_distribute_evenly_basic() {
+        let addrs = vec![
+            Address::from_bytes([1; 20]),
+            Address::from_bytes([2; 20]),
+            Address::from_bytes([3; 20]),
         ];
-        let amount = HclawAmount::from_hclaw(1000);
+        let total = HclawAmount::from_hclaw(900);
 
-        let distribution = distribute_bounty(contributors, amount);
-
-        assert_eq!(distribution.len(), 3);
-        assert_eq!(distribution[0].1.whole_hclaw(), 500);
-        assert_eq!(distribution[1].1.whole_hclaw(), 300);
-        assert_eq!(distribution[2].1.whole_hclaw(), 200);
+        let result = distribute_evenly(&addrs, total);
+        assert_eq!(result.len(), 3);
+        for (_, amt) in &result {
+            assert_eq!(amt.whole_hclaw(), 300);
+        }
     }
 
     #[test]
-    fn test_bounty_tracker_current_day() {
-        let start = 1000;
-        let tracker = BountyTracker::new(start);
+    fn test_distribute_evenly_dust() {
+        let addrs = vec![
+            Address::from_bytes([1; 20]),
+            Address::from_bytes([2; 20]),
+            Address::from_bytes([3; 20]),
+        ];
+        let total = HclawAmount::from_hclaw(1000);
 
-        assert_eq!(tracker.current_day(start), Some(0));
-        assert_eq!(tracker.current_day(start + 24 * 60 * 60 * 1000), Some(1));
-        assert_eq!(
-            tracker.current_day(start + 60 * 24 * 60 * 60 * 1000),
-            Some(60)
-        );
-        assert_eq!(
-            tracker.current_day(start + 89 * 24 * 60 * 60 * 1000),
-            Some(89)
-        );
-        assert_eq!(tracker.current_day(start + 90 * 24 * 60 * 60 * 1000), None);
+        let result = distribute_evenly(&addrs, total);
+        assert_eq!(result.len(), 3);
+        // 1000 / 3 = 333 each, 1 HCLAW dust
+        for (_, amt) in &result {
+            assert_eq!(amt.whole_hclaw(), 333);
+        }
+        let distributed: u128 = result.iter().map(|(_, a)| a.raw()).sum();
+        let dust = total.raw() - distributed;
+        assert!(dust > 0, "Should have some dust");
+        assert!(dust < HclawAmount::from_hclaw(1).raw());
     }
 
     #[test]
-    fn test_bounty_tracker_remaining() {
-        let start = 1000;
-        let mut tracker = BountyTracker::new(start);
+    fn test_distribute_evenly_empty() {
+        let result = distribute_evenly(&[], HclawAmount::from_hclaw(1000));
+        assert!(result.is_empty());
+    }
 
-        let day_10_budget = calculate_daily_budget(10);
-        assert_eq!(tracker.remaining_today(10), day_10_budget);
+    #[test]
+    fn test_distribute_evenly_single() {
+        let addrs = vec![Address::from_bytes([1; 20])];
+        let total = HclawAmount::from_hclaw(500);
 
-        tracker.record_payout(10, HclawAmount::from_hclaw(1000));
-        let remaining = tracker.remaining_today(10);
-        assert_eq!(
-            remaining,
-            day_10_budget.saturating_sub(HclawAmount::from_hclaw(1000))
-        );
+        let result = distribute_evenly(&addrs, total);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].1.whole_hclaw(), 500);
+    }
+
+    #[test]
+    fn test_distribute_evenly_zero_budget() {
+        let addrs = vec![Address::from_bytes([1; 20])];
+        let result = distribute_evenly(&addrs, HclawAmount::ZERO);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_bounty_tracker_epoch_sequencing() {
+        let mut tracker = BountyTracker::new(0);
+
+        assert!(tracker.is_next_epoch(0));
+        assert!(!tracker.is_next_epoch(1));
+        assert!(!tracker.is_next_epoch(5));
+
+        tracker.record_distribution(0, HclawAmount::from_hclaw(100));
+
+        assert!(!tracker.is_next_epoch(0));
+        assert!(tracker.is_next_epoch(1));
+        assert!(!tracker.is_next_epoch(2));
+
+        tracker.record_distribution(1, HclawAmount::from_hclaw(100));
+        assert!(tracker.is_next_epoch(2));
     }
 
     #[test]
     fn test_bounty_tracker_not_active_until_min_nodes() {
-        let tracker = BountyTracker::new(1000);
+        let tracker = BountyTracker::new(0);
         assert!(!tracker.is_active());
 
         let mut tracker = tracker;
@@ -307,17 +368,20 @@ mod tests {
     }
 
     #[test]
-    fn test_slot_machine_deterministic() {
-        let hash = hash_data(b"test");
-        let threshold = u32::MAX / 2; // 50% chance
-
-        let result1 = is_winner_block(hash, 10, threshold);
-        let result2 = is_winner_block(hash, 10, threshold);
-        assert_eq!(result1, result2, "Same inputs should give same result");
-
-        // Different day should give different result
-        let result3 = is_winner_block(hash, 11, threshold);
-        // Not guaranteed to be different, but very likely
-        assert!(result1 == result3 || result1 != result3); // Just checking it compiles
+    fn test_total_pool_accounted() {
+        // Sum all 2160 hourly budgets and verify they account for the pool
+        let mut total_hourly = 0u128;
+        for epoch in 0..TOTAL_EPOCHS {
+            let day = day_from_epoch(epoch);
+            total_hourly += calculate_hourly_budget(day).raw();
+        }
+        let pool = HclawAmount::from_hclaw(BOUNTY_POOL).raw();
+        // The difference is integer division dust: up to 23 raw units per day × 90 days
+        let diff = pool - total_hourly;
+        let max_dust = HOURS_PER_DAY as u128 * BOUNTY_DAYS as u128;
+        assert!(
+            diff <= max_dust,
+            "Pool accounting drift too large: diff={diff}, max_dust={max_dust}"
+        );
     }
 }

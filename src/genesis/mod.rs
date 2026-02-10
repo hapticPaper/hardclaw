@@ -1,18 +1,12 @@
 //! Genesis bootstrapping for the `HardClaw` blockchain.
 //!
 //! The genesis block IS a bounty task: the job of bootstrapping the network
-//! over a 30-day period. This module implements the tiered airdrop,
-//! liveness-gated vesting, competency challenges, the DNS break-glass
-//! mechanism, and the bootstrap state machine.
+//! over a 30-day period. This module contains the bounty payout curve,
+//! TOML-based genesis configuration, and contract initialization.
 
-pub mod airdrop;
-// pub mod bootstrap;
 pub mod bounty;
-pub mod competency;
 pub mod config;
 pub mod contracts;
-pub mod liveness;
-pub mod vesting;
 
 use serde::{Deserialize, Serialize};
 
@@ -28,19 +22,32 @@ pub const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 /// Number of days in the bootstrap period
 pub const BOOTSTRAP_DAYS: u32 = 30;
 
-/// SIMPLIFIED GENESIS: Flat 100 HCLAW stake for first 5,000 wallets
+/// Founder airdrop: 250,000 HCLAW for the first 8 pre-approved wallets
+pub const FOUNDER_AIRDROP_AMOUNT: u64 = 250_000;
+
+/// Maximum founder wallets (pre-approved, get the large airdrop)
+pub const MAX_FOUNDER_WALLETS: u32 = 8;
+
+/// Standard airdrop: 100 HCLAW for everyone after the founders
 pub const GENESIS_AIRDROP_AMOUNT: u64 = 100;
 
-/// Maximum genesis participants
+/// Maximum genesis participants (includes founders)
 pub const MAX_GENESIS_PARTICIPANTS: u32 = 5_000;
 
-/// Total airdrop pool: 500,000 HCLAW (5,000 × 100)
-pub const AIRDROP_POOL_HCLAW: u64 = MAX_GENESIS_PARTICIPANTS as u64 * GENESIS_AIRDROP_AMOUNT;
+/// Total airdrop pool: 8 × 250K + 4,992 × 100 = 2,499,200 HCLAW
+pub const AIRDROP_POOL_HCLAW: u64 = MAX_FOUNDER_WALLETS as u64 * FOUNDER_AIRDROP_AMOUNT
+    + (MAX_GENESIS_PARTICIPANTS - MAX_FOUNDER_WALLETS) as u64 * GENESIS_AIRDROP_AMOUNT;
 
 /// Minimum stake required (50 HCLAW)
 pub const MINIMUM_STAKE_HCLAW: u64 = 50;
 
-/// Maximum DNS break-glass bootstrap nodes
+/// Bootstrap node allocation: 500,000 HCLAW each
+pub const BOOTSTRAP_NODE_TOKENS: u64 = 500_000;
+
+/// Number of initial bootstrap nodes
+pub const NUM_BOOTSTRAP_NODES: u32 = 4;
+
+/// Maximum DNS break-glass bootstrap nodes (emergency mechanism, separate from initial nodes)
 pub const MAX_DNS_BOOTSTRAP_NODES: u32 = 10;
 
 /// Tokens per DNS break-glass node
@@ -139,38 +146,12 @@ pub struct DnsBootstrapClaim {
     pub vests_at: Timestamp,
 }
 
-// GenesisConfig removed
-
 /// Genesis-related errors
 #[derive(Debug, thiserror::Error)]
 pub enum GenesisError {
     /// Invalid genesis configuration
     #[error("invalid genesis config: {0}")]
     InvalidConfig(String),
-    /// Bootstrap period not active
-    #[error("bootstrap period not active")]
-    BootstrapNotActive,
-    /// Airdrop exhausted
-    #[error("all airdrop positions have been claimed")]
-    AirdropExhausted,
-    /// Address already claimed
-    #[error("address has already claimed an airdrop")]
-    AlreadyClaimed,
-    /// Competency challenge failed
-    #[error("competency challenge: {0}")]
-    CompetencyFailed(String),
-    /// DNS break-glass limit reached
-    #[error("DNS break-glass: all {MAX_DNS_BOOTSTRAP_NODES} slots have been used")]
-    DnsBreakGlassExhausted,
-    /// Invalid DNS break-glass claim
-    #[error("DNS break-glass: {0}")]
-    DnsBreakGlassInvalid(String),
-    /// Liveness requirement not met
-    #[error("liveness requirement not met for day {day}")]
-    LivenessNotMet {
-        /// The day that failed liveness
-        day: u32,
-    },
     /// IO error (config file loading)
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
@@ -184,19 +165,14 @@ mod tests {
     use super::*;
     use crate::crypto::Keypair;
 
-    fn test_addresses(n: usize) -> Vec<Address> {
-        (0..n)
-            .map(|_| Address::from_public_key(Keypair::generate().public_key()))
-            .collect()
-    }
-
     #[test]
-    fn test_flat_airdrop_pool() {
-        assert_eq!(
-            AIRDROP_POOL_HCLAW,
-            MAX_GENESIS_PARTICIPANTS as u64 * GENESIS_AIRDROP_AMOUNT
-        );
-        assert_eq!(AIRDROP_POOL_HCLAW, 500_000);
+    fn test_tiered_airdrop_pool() {
+        // 8 founders × 250K + 4,992 regular × 100 = 2,499,200
+        let founder_pool = MAX_FOUNDER_WALLETS as u64 * FOUNDER_AIRDROP_AMOUNT;
+        let regular_pool =
+            (MAX_GENESIS_PARTICIPANTS - MAX_FOUNDER_WALLETS) as u64 * GENESIS_AIRDROP_AMOUNT;
+        assert_eq!(AIRDROP_POOL_HCLAW, founder_pool + regular_pool);
+        assert_eq!(AIRDROP_POOL_HCLAW, 2_499_200);
     }
 
     #[test]
@@ -215,10 +191,12 @@ mod tests {
 
     #[test]
     fn test_max_genesis_supply() {
-        // 500,000 airdrop + 10 * 250,000 DNS = 3,000,000
+        // 4 bootstrap × 500K + 8 founders × 250K + 4,992 regular × 100 + 10 DNS × 250K
+        let bootstrap = NUM_BOOTSTRAP_NODES as u64 * BOOTSTRAP_NODE_TOKENS;
         let airdrop = AIRDROP_POOL_HCLAW;
         let dns = MAX_DNS_BOOTSTRAP_NODES as u64 * DNS_BOOTSTRAP_TOKENS;
-        assert_eq!(airdrop + dns, 3_000_000);
+        // 2,000,000 + 2,499,200 + 2,500,000 = 6,999,200
+        assert_eq!(bootstrap + airdrop + dns, 6_999_200);
     }
 
     #[test]
@@ -229,9 +207,13 @@ mod tests {
     }
 
     #[test]
-    fn test_flat_allocation() {
+    fn test_allocation_constants() {
+        assert_eq!(FOUNDER_AIRDROP_AMOUNT, 250_000);
+        assert_eq!(MAX_FOUNDER_WALLETS, 8);
         assert_eq!(GENESIS_AIRDROP_AMOUNT, 100);
         assert_eq!(MAX_GENESIS_PARTICIPANTS, 5_000);
+        assert_eq!(BOOTSTRAP_NODE_TOKENS, 500_000);
+        assert_eq!(NUM_BOOTSTRAP_NODES, 4);
         assert_eq!(MINIMUM_STAKE_HCLAW, 50);
     }
 }

@@ -28,7 +28,6 @@ pub enum JobType {
 /// just like external jobs — keeping the chain self-hosting from block 0.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SystemJobKind {
-    // GenesisBootstrap removed - use DeployContract instead
     /// A new verifier claimed an airdrop position
     AirdropClaim {
         /// Recipient address

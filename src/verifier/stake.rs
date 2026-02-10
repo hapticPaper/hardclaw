@@ -246,11 +246,15 @@ impl StakeManager {
     pub const DEFAULT_UNBONDING_PERIOD_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
     /// Create a new stake manager
+    ///
+    /// Uses the genesis minimum stake (50 HCLAW) so that airdrop recipients
+    /// can immediately stake and become verifiers. The dynamic formula will
+    /// adjust this upward as circulating supply grows.
     #[must_use]
     pub fn new() -> Self {
         Self {
             stakes: HashMap::new(),
-            min_stake: HclawAmount::from_hclaw(1000),
+            min_stake: HclawAmount::from_hclaw(crate::genesis::MINIMUM_STAKE_HCLAW),
             unbonding_period_ms: Self::DEFAULT_UNBONDING_PERIOD_MS,
             total_staked: HclawAmount::ZERO,
             dynamic_config: DynamicStakeConfig::default(),
@@ -456,7 +460,7 @@ mod tests {
         let mut manager = StakeManager::new();
         let addr = test_address();
 
-        let result = manager.stake(addr, HclawAmount::from_hclaw(100)); // Below min
+        let result = manager.stake(addr, HclawAmount::from_hclaw(10)); // Below min (50)
         assert!(matches!(result, Err(StakeError::InsufficientStake { .. })));
     }
 
@@ -502,8 +506,7 @@ mod tests {
 
         assert_eq!(slashed.whole_hclaw(), 100);
 
-        // Should still be active (90% remaining > min stake)
-        // Actually, with min stake at 1000 and only 900 effective, may not be active
+        // Still active: 900 effective > 50 min stake
         let stake = manager.get_stake(&addr).unwrap();
         assert_eq!(stake.effective_stake().whole_hclaw(), 900);
     }
@@ -570,5 +573,19 @@ mod tests {
         assert_eq!(slashed.whole_hclaw(), 20); // 2% of 1000
         let stake = manager.get_stake(&addr).unwrap();
         assert!(stake.is_active); // Not deactivated at 2%
+    }
+
+    #[test]
+    fn test_genesis_airdrop_can_stake() {
+        // Genesis airdrop gives 100 HCLAW, min stake is 50 — recipients can stake
+        let mut manager = StakeManager::new();
+        let addr = test_address();
+
+        assert_eq!(
+            manager.min_stake().whole_hclaw(),
+            crate::genesis::MINIMUM_STAKE_HCLAW
+        );
+        assert!(manager.stake(addr, HclawAmount::from_hclaw(100)).is_ok());
+        assert!(manager.can_verify(&addr));
     }
 }

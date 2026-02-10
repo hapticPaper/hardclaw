@@ -20,7 +20,10 @@ use hardclaw::{
     mempool::Mempool,
     network::{NetworkConfig, NetworkEvent, NetworkNode, PeerInfo},
     state::ChainState,
-    types::{Address, Block, HclawAmount, JobPacket, JobType, SystemJobKind, VerificationSpec},
+    types::{
+        Address, Block, GenesisAlloc, HclawAmount, JobPacket, JobType, SystemJobKind,
+        VerificationSpec,
+    },
     verifier::{Verifier, VerifierConfig},
 };
 
@@ -159,8 +162,6 @@ struct NodeConfig {
     chain_id: Option<String>,
     /// Path to genesis config TOML file
     genesis_config_path: Option<PathBuf>,
-    /// Reset genesis state before starting
-    reset_genesis: bool,
     /// API Port
     api_port: u16,
 }
@@ -176,7 +177,6 @@ impl Default for NodeConfig {
             network_debug: false,
             chain_id: None,
             genesis_config_path: None,
-            reset_genesis: false,
             api_port: 9001,
         }
     }
@@ -220,22 +220,6 @@ impl HardClawNode {
     /// Initialize the node
     async fn init(&mut self) -> anyhow::Result<()> {
         info!("Initializing HardClaw node...");
-
-        // Handle genesis reset if requested
-        if self.config.reset_genesis {
-            if let Some(ref chain_id) = self.config.chain_id {
-                if chain_id.starts_with("hardclaw-mainnet") {
-                    anyhow::bail!(
-                        "Refusing to reset mainnet chain '{chain_id}'. Use --force if you really mean it."
-                    );
-                }
-                let chain_dir = chain_data_dir(chain_id);
-                if chain_dir.exists() {
-                    info!("Resetting genesis state for chain '{}'", chain_id);
-                    fs::remove_dir_all(&chain_dir)?;
-                }
-            }
-        }
 
         // Ensure chain data directory exists
         if let Some(ref chain_id) = self.config.chain_id {
@@ -289,11 +273,58 @@ impl HardClawNode {
                     .unwrap_or_default()
                     .as_secs();
 
-                // Create GenesisDeploymentConfig
+                // Parse bootstrap node addresses (hex-encoded)
+                let bootstrap_nodes: Vec<Address> = toml_config
+                    .bootstrap_nodes
+                    .iter()
+                    .filter_map(|hex_str| {
+                        let bytes = hex::decode(hex_str).ok()?;
+                        if bytes.len() == 20 {
+                            let mut arr = [0u8; 20];
+                            arr.copy_from_slice(&bytes);
+                            Some(Address::from_bytes(arr))
+                        } else {
+                            warn!(
+                                "Skipping invalid bootstrap node address (expected 20 bytes): {}",
+                                hex_str
+                            );
+                            None
+                        }
+                    })
+                    .collect();
+
+                // Build genesis allocations — initial balances declared in the block
+                let mut alloc = Vec::new();
+                let bootstrap_amount = HclawAmount::from_hclaw(toml_config.bootstrap_node_tokens);
+                for (i, addr) in bootstrap_nodes.iter().enumerate() {
+                    alloc.push(GenesisAlloc {
+                        address: *addr,
+                        amount: bootstrap_amount,
+                        label: format!("bootstrap-{}", i + 1),
+                    });
+                }
+                let founder_amount = HclawAmount::from_hclaw(toml_config.founder_airdrop_amount);
+                for (i, addr) in pre_approved.iter().enumerate() {
+                    alloc.push(GenesisAlloc {
+                        address: *addr,
+                        amount: founder_amount,
+                        label: format!("founder-{}", i + 1),
+                    });
+                }
+
+                // Create GenesisDeploymentConfig — contract handles future
+                // JoinGenesis transactions, not initial allocations.
                 let genesis_config = GenesisDeploymentConfig {
-                    airdrop_amount: HclawAmount::from_hclaw(100), // Default 100
-                    max_participants: 5000,
+                    airdrop_amount: HclawAmount::from_hclaw(toml_config.airdrop_amount),
+                    founder_airdrop_amount: HclawAmount::from_hclaw(
+                        toml_config.founder_airdrop_amount,
+                    ),
+                    max_participants: toml_config.max_participants,
                     pre_approved: pre_approved.clone(),
+                    bootstrap_nodes: bootstrap_nodes.clone(),
+                    bootstrap_node_tokens: HclawAmount::from_hclaw(
+                        toml_config.bootstrap_node_tokens,
+                    ),
                     dns_break_glass: DnsBreakGlassConfig {
                         domain: hardclaw::genesis::BOOTSTRAP_DNS_DOMAIN.to_string(),
                         max_nodes: hardclaw::genesis::MAX_DNS_BOOTSTRAP_NODES,
@@ -319,7 +350,8 @@ impl HardClawNode {
                     deployer: Address::from_public_key(&authority_key),
                 };
 
-                // Create DEPLOY job
+                // Create DEPLOY job — contract on_deploy initializes storage only.
+                // Initial balances come from genesis_alloc in the block.
                 let genesis_job = JobPacket::new(
                     JobType::System,
                     authority_key.clone(),
@@ -335,19 +367,8 @@ impl HardClawNode {
                 );
 
                 let genesis =
-                    Block::genesis_with_job(self.keypair.public_key().clone(), genesis_job);
+                    Block::genesis_with_job(self.keypair.public_key().clone(), genesis_job, alloc);
                 state.apply_block(genesis)?;
-
-                // Credit pre-approved addresses with genesis airdrop
-                for addr in &pre_approved {
-                    state
-                        .get_or_create_account(addr)
-                        .credit(HclawAmount::from_hclaw(100));
-                    info!(
-                        "Credited genesis airdrop (100 HCLAW) to pre-approved: {}",
-                        addr
-                    );
-                }
             } else {
                 let _chain_id = self
                     .config
@@ -365,14 +386,37 @@ impl HardClawNode {
                     .unwrap_or_default()
                     .as_secs();
 
-                // Self is authority and pre-approved
+                // Self is authority, founder, and bootstrap node for local dev
                 let authority_key = self.keypair.public_key().clone();
-                let pre_approved = vec![Address::from_public_key(&authority_key)];
+                let my_address = Address::from_public_key(&authority_key);
+
+                // Local dev: node gets bootstrap (500K) + founder (250K) = 750K
+                let alloc = vec![
+                    GenesisAlloc {
+                        address: my_address,
+                        amount: HclawAmount::from_hclaw(hardclaw::genesis::BOOTSTRAP_NODE_TOKENS),
+                        label: "bootstrap-local".to_string(),
+                    },
+                    GenesisAlloc {
+                        address: my_address,
+                        amount: HclawAmount::from_hclaw(hardclaw::genesis::FOUNDER_AIRDROP_AMOUNT),
+                        label: "founder-local".to_string(),
+                    },
+                ];
 
                 let genesis_config = GenesisDeploymentConfig {
-                    airdrop_amount: HclawAmount::from_hclaw(100),
-                    max_participants: 5000,
-                    pre_approved,
+                    airdrop_amount: HclawAmount::from_hclaw(
+                        hardclaw::genesis::GENESIS_AIRDROP_AMOUNT,
+                    ),
+                    founder_airdrop_amount: HclawAmount::from_hclaw(
+                        hardclaw::genesis::FOUNDER_AIRDROP_AMOUNT,
+                    ),
+                    max_participants: hardclaw::genesis::MAX_GENESIS_PARTICIPANTS,
+                    pre_approved: vec![my_address],
+                    bootstrap_nodes: vec![my_address],
+                    bootstrap_node_tokens: HclawAmount::from_hclaw(
+                        hardclaw::genesis::BOOTSTRAP_NODE_TOKENS,
+                    ),
                     dns_break_glass: DnsBreakGlassConfig {
                         domain: hardclaw::genesis::BOOTSTRAP_DNS_DOMAIN.to_string(),
                         max_nodes: hardclaw::genesis::MAX_DNS_BOOTSTRAP_NODES,
@@ -396,7 +440,8 @@ impl HardClawNode {
                     deployer: Address::from_public_key(&authority_key),
                 };
 
-                // Create DEPLOY job
+                // Create DEPLOY job — contract on_deploy initializes storage only.
+                // Initial balances come from genesis_alloc in the block.
                 let genesis_job = JobPacket::new(
                     JobType::System,
                     authority_key.clone(),
@@ -412,18 +457,8 @@ impl HardClawNode {
                 );
 
                 let genesis =
-                    Block::genesis_with_job(self.keypair.public_key().clone(), genesis_job);
+                    Block::genesis_with_job(self.keypair.public_key().clone(), genesis_job, alloc);
                 state.apply_block(genesis)?;
-
-                // Credit pre-approved addresses with genesis airdrop so balances are visible
-                let my_address = Address::from_public_key(&authority_key);
-                state
-                    .get_or_create_account(&my_address)
-                    .credit(HclawAmount::from_hclaw(100));
-                info!(
-                    "Credited genesis airdrop (100 HCLAW) to node address: {}",
-                    my_address
-                );
             }
         }
 
@@ -682,9 +717,6 @@ fn parse_args(args: Vec<String>) -> NodeCommand {
                     config.genesis_config_path = Some(PathBuf::from(&args[i]));
                 }
             }
-            "--reset-genesis" => {
-                config.reset_genesis = true;
-            }
             "--help" | "-h" => {
                 print_help();
                 std::process::exit(0);
@@ -717,7 +749,6 @@ fn print_help() {
     println!("    --no-official-bootstrap     Don't use official bootstrap nodes");
     println!("    --chain-id <ID>             Chain ID for network isolation");
     println!("    --genesis <PATH>            Path to genesis config TOML file");
-    println!("    --reset-genesis             Wipe chain state and re-init from genesis");
     println!("    -h, --help                  Print help");
 }
 

@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{now_millis, Id, Timestamp, VerificationResult};
+use super::{now_millis, Address, HclawAmount, Id, Timestamp, VerificationResult};
 use crate::crypto::{hash_data, merkle_root, Hash, PublicKey, Signature};
 use crate::types::job::JobPacket;
 
@@ -96,6 +96,17 @@ impl VerifierAttestation {
     }
 }
 
+/// Initial balance allocation for genesis block (like Ethereum's alloc)
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenesisAlloc {
+    /// Address to credit
+    pub address: Address,
+    /// Amount to credit
+    pub amount: HclawAmount,
+    /// Label for this allocation (e.g., "bootstrap-us", "founder-1")
+    pub label: String,
+}
+
 /// A complete block in the `HardClaw` blockchain
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Block {
@@ -112,6 +123,11 @@ pub struct Block {
     /// Genesis job packet (only present in the genesis block)
     /// This job CONTAINS the genesis configuration in its system variant.
     pub genesis_job: Option<JobPacket>,
+    /// Initial balance allocations (genesis block only).
+    /// These are applied directly to state — not through contract execution.
+    /// All nodes must agree on the same genesis_alloc to join the network.
+    #[serde(default)]
+    pub genesis_alloc: Vec<GenesisAlloc>,
 }
 
 impl Block {
@@ -147,6 +163,7 @@ impl Block {
             attestations: Vec::new(),
             proposer_signature: Signature::placeholder(),
             genesis_job: None,
+            genesis_alloc: Vec::new(),
         }
     }
 
@@ -156,16 +173,23 @@ impl Block {
         Self::new(0, Hash::ZERO, proposer, Vec::new(), Hash::ZERO)
     }
 
-    /// Create the genesis block with the Genesis Job
+    /// Create the genesis block with the Genesis Job and initial allocations.
+    ///
+    /// The `alloc` contains initial balance allocations that are applied
+    /// directly to state — not through contract execution. This is analogous
+    /// to Ethereum's genesis alloc.
     #[must_use]
-    pub fn genesis_with_job(proposer: PublicKey, job: JobPacket) -> Self {
+    pub fn genesis_with_job(proposer: PublicKey, job: JobPacket, alloc: Vec<GenesisAlloc>) -> Self {
         let mut block = Self::new(0, Hash::ZERO, proposer, Vec::new(), Hash::ZERO);
         block.genesis_job = Some(job);
-        // Recompute hash to include genesis job commitment
+        block.genesis_alloc = alloc;
+        // Recompute hash to include genesis job + alloc commitment
         let job_hash = hash_data(&bincode::serialize(&block.genesis_job).unwrap_or_default());
+        let alloc_hash = hash_data(&bincode::serialize(&block.genesis_alloc).unwrap_or_default());
         let mut data = Vec::new();
         data.extend_from_slice(block.hash.as_bytes());
         data.extend_from_slice(job_hash.as_bytes());
+        data.extend_from_slice(alloc_hash.as_bytes());
         block.hash = hash_data(&data);
         block
     }

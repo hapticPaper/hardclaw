@@ -186,9 +186,13 @@ impl AIModelCheck {
                 .status();
 
             #[cfg(target_os = "windows")]
-            let install_result = Command::new("winget")
-                .args(["install", "Ollama.Ollama"])
-                .status();
+            let install_result = {
+                // winget returns immediately while the installer runs async in another window.
+                // Use --wait to block until the install actually completes.
+                Command::new("winget")
+                    .args(["install", "Ollama.Ollama", "--wait"])
+                    .status()
+            };
 
             #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
             let install_result: Result<std::process::ExitStatus, std::io::Error> =
@@ -199,7 +203,34 @@ impl AIModelCheck {
 
             match install_result {
                 Ok(status) if status.success() => {
-                    eprintln!("✅ Ollama installed and started");
+                    eprintln!("✅ Ollama installed");
+
+                    // On Windows, even with --wait, the PATH may not be updated in this
+                    // process. Poll for the binary to become reachable.
+                    #[cfg(target_os = "windows")]
+                    {
+                        eprintln!("⏳ Waiting for Ollama to become available...");
+                        let mut found = false;
+                        for _ in 0..30 {
+                            std::thread::sleep(std::time::Duration::from_secs(2));
+                            if Command::new("ollama")
+                                .arg("--version")
+                                .output()
+                                .map(|o| o.status.success())
+                                .unwrap_or(false)
+                            {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if !found {
+                            warnings.push(
+                                "Ollama installed but not yet on PATH — you may need to restart your terminal".to_string(),
+                            );
+                        }
+                    }
+
+                    #[cfg(not(target_os = "windows"))]
                     std::thread::sleep(std::time::Duration::from_secs(3));
                 }
                 _ => {
@@ -232,7 +263,16 @@ impl AIModelCheck {
                 .ok();
         }
 
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        #[cfg(target_os = "windows")]
+        {
+            // Start Ollama serve in background (Windows has no systemd/launchd)
+            Command::new("cmd")
+                .args(["/C", "start", "/B", "ollama", "serve"])
+                .spawn()
+                .ok();
+        }
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
 
         // Step 3: Get current models
         let models_output = Command::new("ollama").arg("list").output();

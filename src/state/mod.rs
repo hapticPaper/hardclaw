@@ -122,10 +122,6 @@ impl ChainState {
         }
     }
 
-    // deleted with_genesis
-
-    // deleted bootstrap() and bootstrap_mut()
-
     /// Get chain ID
     #[must_use]
     pub fn chain_id(&self) -> Option<&str> {
@@ -199,8 +195,21 @@ impl ChainState {
             });
         }
 
-        // Genesis block: check for deploy jobs
+        // Genesis block: apply initial allocations and deploy contracts
         if block.header.height == 0 {
+            // 1. Apply genesis allocations directly to state (like Ethereum alloc)
+            for alloc in &block.genesis_alloc {
+                self.get_or_create_account(&alloc.address)
+                    .credit(alloc.amount);
+                info!(
+                    "Genesis alloc: {} HCLAW → {} ({})",
+                    alloc.amount.whole_hclaw(),
+                    alloc.address,
+                    alloc.label
+                );
+            }
+
+            // 2. Deploy genesis contract (initializes contract storage only — no credits)
             if let Some(ref job) = block.genesis_job {
                 if matches!(job.job_type, JobType::System) {
                     if let VerificationSpec::SystemOperation {

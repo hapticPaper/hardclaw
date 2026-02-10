@@ -2,10 +2,9 @@
 //!
 //! This contract handles:
 //! - Participant joining with minimum stake
-//! - Flat 100 HCLAW airdrop distribution
-//! - Parabolic daily bounty payouts
-//! - Slot machine block winner selection
-//! - Proportional reward distribution
+//! - Tiered airdrop distribution (founders 250K, regular 100 HCLAW)
+//! - Hourly bounty distribution to eligible staked verifiers
+//! - Even distribution among attestation-eligible participants
 //!
 //! All mutable state is persisted in `ContractState` storage so that it
 //! survives across calls (the `Contract::execute` trait method takes `&self`).
@@ -17,7 +16,7 @@ use crate::contracts::transaction::ContractTransaction;
 use crate::contracts::{Contract, ContractError, ContractResult, ExecutionResult};
 use crate::crypto::Hash;
 use crate::genesis::bounty::{
-    distribute_bounty, is_winner_block, BountyTracker, BOUNTY_DAYS, MIN_PUBLIC_NODES,
+    calculate_hourly_budget, day_from_epoch, distribute_evenly, BountyTracker, MIN_PUBLIC_NODES,
 };
 use crate::genesis::DnsBreakGlassConfig;
 use crate::types::{Address, HclawAmount};
@@ -25,12 +24,18 @@ use crate::types::{Address, HclawAmount};
 /// Genesis configuration passed in init_data
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GenesisDeploymentConfig {
-    /// Airdrop amount per participant
+    /// Standard airdrop amount per participant (100 HCLAW)
     pub airdrop_amount: HclawAmount,
+    /// Founder airdrop amount for pre-approved wallets (250,000 HCLAW)
+    pub founder_airdrop_amount: HclawAmount,
     /// Maximum participants allowed
     pub max_participants: u32,
-    /// Pre-approved addresses (skip competency/stake)
+    /// Pre-approved addresses (founders — get founder_airdrop_amount, skip competency/stake)
     pub pre_approved: Vec<Address>,
+    /// Bootstrap node addresses (get bootstrap_node_tokens at genesis)
+    pub bootstrap_nodes: Vec<Address>,
+    /// Tokens per bootstrap node (500,000 HCLAW)
+    pub bootstrap_node_tokens: HclawAmount,
     /// DNS break-glass configuration
     pub dns_break_glass: DnsBreakGlassConfig,
     /// Bootstrap period end timestamp
@@ -68,14 +73,16 @@ pub enum BountyAction {
         /// Amount to stake
         stake: HclawAmount,
     },
-    /// Claim daily bounty for a winning block
-    ClaimBounty {
-        /// Bootstrap day (0-89)
-        day: u8,
-        /// Block hash used for randomness
-        block_hash: Hash,
-        /// List of contributing validators and their attestation counts
-        contributors: Vec<(Address, u32)>,
+    /// Distribute hourly bounty to eligible staked verifiers.
+    ///
+    /// Injected as a system job by the block proposer at each hour boundary.
+    /// All verifiers re-execute independently — if the proposer lies about the
+    /// eligible list, state hashes diverge and the block is rejected.
+    DistributeHourly {
+        /// Hour index since bounty start (0–2159)
+        epoch: u64,
+        /// Staked verifiers who attested in the prior hour
+        eligible_verifiers: Vec<Address>,
     },
     /// Update public node count
     UpdateNodeCount {
@@ -222,10 +229,10 @@ impl GenesisBountyContract {
             ));
         }
 
-        // Validate stake (skip for pre-approved users)
-        let is_pre_approved = config.pre_approved.contains(&sender);
+        // Validate stake (skip for pre-approved/founder users)
+        let is_founder = config.pre_approved.contains(&sender);
 
-        if !is_pre_approved {
+        if !is_founder {
             let min_stake = HclawAmount::from_hclaw(MIN_STAKE);
             if stake_amount < min_stake {
                 return Err(ContractError::ExecutionFailed(format!(
@@ -237,8 +244,12 @@ impl GenesisBountyContract {
             state.debit(sender, stake_amount)?;
         }
 
-        // Credit airdrop
-        let airdrop = config.airdrop_amount;
+        // Credit airdrop: founders get 250K, everyone else gets 100
+        let airdrop = if is_founder {
+            config.founder_airdrop_amount
+        } else {
+            config.airdrop_amount
+        };
         state.credit(sender, airdrop);
 
         // Persist participant
@@ -263,22 +274,15 @@ impl GenesisBountyContract {
         Ok(())
     }
 
-    fn execute_claim(
+    fn execute_distribute_hourly(
         &self,
         state: &mut ContractState<'_>,
-        day: u8,
-        block_hash: Hash,
-        contributors: Vec<(Address, u32)>,
+        epoch: u64,
+        eligible_verifiers: Vec<Address>,
     ) -> ContractResult<()> {
-        if day >= BOUNTY_DAYS {
-            return Err(ContractError::ExecutionFailed(format!(
-                "Day {} out of range",
-                day
-            )));
-        }
-
         let mut tracker = self.load_bounty_tracker(state);
 
+        // 1. Check bounties active (enough public nodes)
         if !tracker.is_active() {
             return Err(ContractError::ExecutionFailed(format!(
                 "Bounties not active (need {} public nodes, have {})",
@@ -286,46 +290,86 @@ impl GenesisBountyContract {
             )));
         }
 
-        // Check if this block wins
-        let threshold = u32::MAX / 10; // 10% win chance
-        if !is_winner_block(block_hash, day, threshold) {
-            return Err(ContractError::ExecutionFailed(
-                "Block is not a winner".to_string(),
-            ));
+        // 2. Check sequential epoch ordering
+        if !tracker.is_next_epoch(epoch) {
+            return Err(ContractError::ExecutionFailed(format!(
+                "Epoch {} is not the next expected epoch",
+                epoch
+            )));
         }
 
-        let remaining = tracker.remaining_today(day);
-        if remaining.raw() == 0 {
-            return Err(ContractError::ExecutionFailed(
-                "No remaining budget for today".to_string(),
-            ));
+        // 3. Compute hourly budget
+        let day = day_from_epoch(epoch);
+        let hourly_budget = calculate_hourly_budget(day);
+
+        // 4. If no eligible verifiers or zero budget, burn this hour's budget
+        if eligible_verifiers.is_empty() || hourly_budget.raw() == 0 {
+            tracker.record_distribution(epoch, HclawAmount::ZERO);
+            tracker.record_burn(hourly_budget);
+            self.save_bounty_tracker(state, &tracker)?;
+
+            let event_data = bincode::serialize(&(epoch, day, hourly_budget)).unwrap();
+            state.emit_event(crate::contracts::ContractEvent {
+                contract_id: self.id,
+                topic: "HourlyBountyBurned".to_string(),
+                data: event_data,
+            });
+            return Ok(());
         }
 
-        // Distribute bounty
-        let distributions = distribute_bounty(contributors, remaining);
+        // 5. Validate every address is a joined participant with stake > 0
+        for addr in &eligible_verifiers {
+            match self.load_participant(state, addr) {
+                None => {
+                    return Err(ContractError::ExecutionFailed(format!(
+                        "Address {} is not a participant",
+                        hex::encode(addr.as_bytes())
+                    )));
+                }
+                Some(p) if p.stake.raw() == 0 => {
+                    return Err(ContractError::ExecutionFailed(format!(
+                        "Address {} has zero stake",
+                        hex::encode(addr.as_bytes())
+                    )));
+                }
+                _ => {}
+            }
+        }
 
-        // Apply distributions and update participant records
+        // 6. Distribute evenly
+        let distributions = distribute_evenly(&eligible_verifiers, hourly_budget);
+
         let mut total_distributed = HclawAmount::ZERO;
         for (addr, amount) in &distributions {
             state.credit(*addr, *amount);
             total_distributed = total_distributed.saturating_add(*amount);
 
-            // Update participant bounty tally in storage
+            // Update participant bounty tally
             if let Some(mut participant) = self.load_participant(state, addr) {
                 participant.bounties_earned = participant.bounties_earned.saturating_add(*amount);
                 let _ = self.save_participant(state, &participant);
             }
         }
 
-        // Record payout and persist tracker
-        tracker.record_payout(day, total_distributed);
+        // 7. Record distribution + dust burn
+        let dust = HclawAmount::from_raw(hourly_budget.raw() - total_distributed.raw());
+        tracker.record_distribution(epoch, total_distributed);
+        if dust.raw() > 0 {
+            tracker.record_burn(dust);
+        }
         self.save_bounty_tracker(state, &tracker)?;
 
-        // Emit event
-        let event_data = bincode::serialize(&(day, block_hash, total_distributed)).unwrap();
+        // 8. Emit event
+        let event_data = bincode::serialize(&(
+            epoch,
+            day,
+            total_distributed,
+            eligible_verifiers.len() as u32,
+        ))
+        .unwrap();
         state.emit_event(crate::contracts::ContractEvent {
             contract_id: self.id,
-            topic: "BountyClaimed".to_string(),
+            topic: "HourlyBountyDistributed".to_string(),
             data: event_data,
         });
 
@@ -367,12 +411,11 @@ impl Contract for GenesisBountyContract {
             BountyAction::JoinGenesis { stake } => {
                 self.execute_join(state, tx.sender_address, stake)?;
             }
-            BountyAction::ClaimBounty {
-                day,
-                block_hash,
-                contributors,
+            BountyAction::DistributeHourly {
+                epoch,
+                eligible_verifiers,
             } => {
-                self.execute_claim(state, day, block_hash, contributors)?;
+                self.execute_distribute_hourly(state, epoch, eligible_verifiers)?;
             }
             BountyAction::UpdateNodeCount { count } => {
                 self.execute_update_nodes(state, count)?;
@@ -412,9 +455,13 @@ impl Contract for GenesisBountyContract {
         self.save_participant_count(state, 0);
 
         // Initialize bounty tracker with current time
-        let now = crate::types::now_millis();
+        let now = crate::types::now_millis() as u64;
         let tracker = BountyTracker::new(now);
         self.save_bounty_tracker(state, &tracker)?;
+
+        // NOTE: Initial balance allocations (bootstrap nodes, founders) are
+        // applied via genesis_alloc in the genesis block — not here. This
+        // on_deploy only initializes contract storage.
 
         // Emit initialization event
         let event_data = bincode::serialize(&config.bootstrap_end).unwrap_or_default();
@@ -441,11 +488,23 @@ mod tests {
         contract: &GenesisBountyContract,
         storage: &mut HashMap<(Address, Vec<u8>), Vec<u8>>,
     ) {
+        store_config_with_founders(contract, storage, Vec::new());
+    }
+
+    /// Store config with specific founder addresses.
+    fn store_config_with_founders(
+        contract: &GenesisBountyContract,
+        storage: &mut HashMap<(Address, Vec<u8>), Vec<u8>>,
+        founders: Vec<Address>,
+    ) {
         let authority_kp = Keypair::generate();
         let config = GenesisDeploymentConfig {
             airdrop_amount: HclawAmount::from_hclaw(AIRDROP_AMOUNT),
+            founder_airdrop_amount: HclawAmount::from_hclaw(crate::genesis::FOUNDER_AIRDROP_AMOUNT),
             max_participants: MAX_PARTICIPANTS as u32,
-            pre_approved: Vec::new(),
+            pre_approved: founders,
+            bootstrap_nodes: Vec::new(),
+            bootstrap_node_tokens: HclawAmount::from_hclaw(crate::genesis::BOOTSTRAP_NODE_TOKENS),
             dns_break_glass: DnsBreakGlassConfig {
                 domain: "bootstrap.hardclaw.net".to_string(),
                 max_nodes: 10,
@@ -457,6 +516,34 @@ mod tests {
         };
         let data = bincode::serialize(&config).expect("serialize config");
         storage.insert((contract.address(), KEY_CONFIG.to_vec()), data);
+    }
+
+    /// Helper: create a joined participant with a given stake.
+    fn join_participant(
+        contract: &GenesisBountyContract,
+        state: &mut ContractState<'_>,
+        address: Address,
+        stake: u64,
+    ) {
+        let participant = Participant {
+            address,
+            stake: HclawAmount::from_hclaw(stake),
+            airdrop: HclawAmount::from_hclaw(100),
+            bounties_earned: HclawAmount::ZERO,
+            joined_at: 1_000_000,
+        };
+        contract.save_participant(state, &participant).unwrap();
+    }
+
+    /// Helper: set up bounty tracker with active node count and given start time.
+    fn setup_active_tracker(
+        contract: &GenesisBountyContract,
+        state: &mut ContractState<'_>,
+        start_time: u64,
+    ) {
+        let mut tracker = BountyTracker::new(start_time);
+        tracker.update_node_count(MIN_PUBLIC_NODES);
+        contract.save_bounty_tracker(state, &tracker).unwrap();
     }
 
     #[test]
@@ -557,5 +644,217 @@ mod tests {
         let tracker = contract.load_bounty_tracker(&state);
         assert_eq!(tracker.public_node_count, 10);
         assert!(tracker.is_active());
+    }
+
+    #[test]
+    fn test_founder_join_gets_250k() {
+        let contract = GenesisBountyContract::new(1000);
+        let mut accounts = HashMap::new();
+        let mut storage = HashMap::new();
+
+        let kp = Keypair::generate();
+        let founder = Address::from_public_key(kp.public_key());
+
+        // Config with this address as a founder
+        store_config_with_founders(&contract, &mut storage, vec![founder]);
+
+        let mut state = ContractState::new(&mut accounts, &mut storage);
+
+        // Founders don't need to stake
+        let result = contract.execute_join(&mut state, founder, HclawAmount::ZERO);
+        assert!(result.is_ok(), "founder join failed: {:?}", result.err());
+
+        let participant = contract.load_participant(&state, &founder).unwrap();
+        assert_eq!(participant.airdrop.whole_hclaw(), 250_000);
+    }
+
+    #[test]
+    fn test_regular_join_gets_100() {
+        let contract = GenesisBountyContract::new(1000);
+        let mut accounts = HashMap::new();
+        let mut storage = HashMap::new();
+
+        store_default_config(&contract, &mut storage);
+
+        let kp = Keypair::generate();
+        let regular = Address::from_public_key(kp.public_key());
+
+        accounts.insert(
+            regular,
+            crate::state::AccountState::new(HclawAmount::from_hclaw(1000)),
+        );
+
+        let mut state = ContractState::new(&mut accounts, &mut storage);
+
+        let result = contract.execute_join(&mut state, regular, HclawAmount::from_hclaw(MIN_STAKE));
+        assert!(result.is_ok(), "regular join failed: {:?}", result.err());
+
+        let participant = contract.load_participant(&state, &regular).unwrap();
+        assert_eq!(participant.airdrop.whole_hclaw(), 100);
+    }
+
+    // ── DistributeHourly tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_distribute_hourly_credits_evenly() {
+        let contract = GenesisBountyContract::new(1000);
+        let mut accounts = HashMap::new();
+        let mut storage = HashMap::new();
+
+        store_default_config(&contract, &mut storage);
+
+        let addrs: Vec<Address> = (0..3)
+            .map(|i| {
+                let mut b = [0u8; 20];
+                b[0] = i + 1;
+                Address::from_bytes(b)
+            })
+            .collect();
+
+        let mut state = ContractState::new(&mut accounts, &mut storage);
+
+        // Set up active tracker at epoch 0
+        setup_active_tracker(&contract, &mut state, 0);
+
+        // Register 3 participants with stake
+        for addr in &addrs {
+            join_participant(&contract, &mut state, *addr, MIN_STAKE);
+        }
+
+        // Distribute epoch 24 (day 1, hour 0 — first non-zero budget)
+        // First advance tracker through epochs 0-23 (day 0, all zero budget)
+        let mut tracker = contract.load_bounty_tracker(&state);
+        for e in 0..24 {
+            tracker.record_distribution(e, HclawAmount::ZERO);
+        }
+        contract.save_bounty_tracker(&mut state, &tracker).unwrap();
+
+        let result = contract.execute_distribute_hourly(&mut state, 24, addrs.clone());
+        assert!(result.is_ok(), "distribute failed: {:?}", result.err());
+
+        // All 3 should have equal bounties_earned
+        let p0 = contract.load_participant(&state, &addrs[0]).unwrap();
+        let p1 = contract.load_participant(&state, &addrs[1]).unwrap();
+        let p2 = contract.load_participant(&state, &addrs[2]).unwrap();
+        assert_eq!(p0.bounties_earned, p1.bounties_earned);
+        assert_eq!(p1.bounties_earned, p2.bounties_earned);
+        assert!(p0.bounties_earned.raw() > 0, "Should have received bounty");
+    }
+
+    #[test]
+    fn test_distribute_hourly_rejects_wrong_epoch() {
+        let contract = GenesisBountyContract::new(1000);
+        let mut accounts = HashMap::new();
+        let mut storage = HashMap::new();
+
+        store_default_config(&contract, &mut storage);
+
+        let addr = Address::from_bytes([1; 20]);
+        let mut state = ContractState::new(&mut accounts, &mut storage);
+
+        setup_active_tracker(&contract, &mut state, 0);
+        join_participant(&contract, &mut state, addr, MIN_STAKE);
+
+        // Epoch 5 should fail — epoch 0 is next
+        let result = contract.execute_distribute_hourly(&mut state, 5, vec![addr]);
+        assert!(result.is_err());
+        assert!(format!("{:?}", result.err().unwrap()).contains("not the next expected epoch"),);
+    }
+
+    #[test]
+    fn test_distribute_hourly_burns_if_no_eligible() {
+        let contract = GenesisBountyContract::new(1000);
+        let mut accounts = HashMap::new();
+        let mut storage = HashMap::new();
+
+        store_default_config(&contract, &mut storage);
+
+        let mut state = ContractState::new(&mut accounts, &mut storage);
+        setup_active_tracker(&contract, &mut state, 0);
+
+        // Distribute epoch 0 with empty verifier list — should burn
+        let result = contract.execute_distribute_hourly(&mut state, 0, vec![]);
+        assert!(result.is_ok());
+
+        // Tracker should advance to epoch 0
+        let tracker = contract.load_bounty_tracker(&state);
+        assert_eq!(tracker.last_distributed_epoch, 0);
+        assert_eq!(tracker.total_paid.raw(), 0);
+    }
+
+    #[test]
+    fn test_distribute_hourly_rejects_non_participant() {
+        let contract = GenesisBountyContract::new(1000);
+        let mut accounts = HashMap::new();
+        let mut storage = HashMap::new();
+
+        store_default_config(&contract, &mut storage);
+
+        let unknown = Address::from_bytes([99; 20]);
+        let mut state = ContractState::new(&mut accounts, &mut storage);
+
+        setup_active_tracker(&contract, &mut state, 0);
+
+        // Advance past day 0 (zero budget) to epoch 24 (day 1)
+        let mut tracker = contract.load_bounty_tracker(&state);
+        for e in 0..24 {
+            tracker.record_distribution(e, HclawAmount::ZERO);
+        }
+        contract.save_bounty_tracker(&mut state, &tracker).unwrap();
+
+        // Unknown address — not joined
+        let result = contract.execute_distribute_hourly(&mut state, 24, vec![unknown]);
+        assert!(result.is_err());
+        assert!(format!("{:?}", result.err().unwrap()).contains("not a participant"),);
+    }
+
+    #[test]
+    fn test_distribute_hourly_rejects_zero_stake() {
+        let contract = GenesisBountyContract::new(1000);
+        let mut accounts = HashMap::new();
+        let mut storage = HashMap::new();
+
+        store_default_config(&contract, &mut storage);
+
+        let addr = Address::from_bytes([1; 20]);
+        let mut state = ContractState::new(&mut accounts, &mut storage);
+
+        setup_active_tracker(&contract, &mut state, 0);
+
+        // Advance past day 0 (zero budget) to epoch 24 (day 1)
+        let mut tracker = contract.load_bounty_tracker(&state);
+        for e in 0..24 {
+            tracker.record_distribution(e, HclawAmount::ZERO);
+        }
+        contract.save_bounty_tracker(&mut state, &tracker).unwrap();
+
+        // Join with zero stake
+        join_participant(&contract, &mut state, addr, 0);
+
+        let result = contract.execute_distribute_hourly(&mut state, 24, vec![addr]);
+        assert!(result.is_err());
+        assert!(format!("{:?}", result.err().unwrap()).contains("zero stake"),);
+    }
+
+    #[test]
+    fn test_distribute_hourly_not_active_rejects() {
+        let contract = GenesisBountyContract::new(1000);
+        let mut accounts = HashMap::new();
+        let mut storage = HashMap::new();
+
+        store_default_config(&contract, &mut storage);
+
+        let addr = Address::from_bytes([1; 20]);
+        let mut state = ContractState::new(&mut accounts, &mut storage);
+
+        // Tracker with 0 nodes — not active
+        let tracker = BountyTracker::new(0);
+        contract.save_bounty_tracker(&mut state, &tracker).unwrap();
+
+        join_participant(&contract, &mut state, addr, MIN_STAKE);
+
+        let result = contract.execute_distribute_hourly(&mut state, 0, vec![addr]);
+        assert!(result.is_err());
+        assert!(format!("{:?}", result.err().unwrap()).contains("not active"),);
     }
 }

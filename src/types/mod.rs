@@ -13,7 +13,7 @@ mod verification;
 
 pub use address::Address;
 pub use amount::HclawAmount;
-pub use block::{Block, BlockHeader, VerifierAttestation};
+pub use block::{Block, BlockHeader, GenesisAlloc, VerifierAttestation};
 pub use governance::GovernanceAction;
 pub use job::{JobPacket, JobStatus, JobType, SystemJobKind, VerificationSpec};
 pub use review::*;
