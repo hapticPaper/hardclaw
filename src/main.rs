@@ -6,6 +6,7 @@
 //!   hardclaw cli       - Interactive CLI
 
 mod cli;
+mod keygen;
 mod node;
 mod onboarding;
 
@@ -23,6 +24,10 @@ fn main() {
         }
         Some("cli") => {
             cli::run();
+        }
+        Some("keygen") => {
+            let keygen_args = args[2..].to_vec();
+            keygen::run(&keygen_args);
         }
         Some("--help") | Some("-h") => {
             print_help();
@@ -64,6 +69,9 @@ fn print_help() {
     println!("    (default)   Launch the onboarding TUI");
     println!("    node        Run a full node or verifier");
     println!("    cli         Interactive CLI for wallet & jobs");
+    println!("    keygen      Generate a new wallet/keypair");
+    println!("                  --seed       Derive from existing seed phrase");
+    println!("                  --authority  Generate authority key (requires --seed)");
     println!();
     println!("OPTIONS:");
     println!("    -h, --help      Print help");
@@ -74,4 +82,5 @@ fn print_help() {
     println!("    hardclaw node --verifier     Run as verifier node");
     println!("    hardclaw node --help         Show node options");
     println!("    hardclaw cli                 Start interactive CLI");
+    println!("    hardclaw keygen              Generate keys");
 }

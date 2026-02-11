@@ -25,7 +25,7 @@ use ratatui::{
 
 use hardclaw::{
     verifier::{AIModelCheck, EnvironmentCheck},
-    wallet::Wallet,
+    wallet::{Wallet, WalletInfo},
 };
 
 /// Application state
@@ -40,6 +40,11 @@ enum AppState {
     },
     LoadWallet,
     WalletLoaded {
+        address: String,
+    },
+
+    SelectWallet,
+    WalletSelected {
         address: String,
     },
     /// Selection screen - user chooses which environments to set up
@@ -64,12 +69,12 @@ enum AppState {
 
 /// Menu selection state
 struct MenuState {
-    items: Vec<&'static str>,
+    items: Vec<String>,
     selected: usize,
 }
 
 impl MenuState {
-    fn new(items: Vec<&'static str>) -> Self {
+    fn new(items: Vec<String>) -> Self {
         Self { items, selected: 0 }
     }
 
@@ -139,13 +144,44 @@ impl EnvSelectionState {
     }
 }
 
+struct WalletListState {
+    wallets: Vec<WalletInfo>,
+    selected: usize,
+}
+
+impl WalletListState {
+    fn new(wallets: Vec<WalletInfo>) -> Self {
+        Self {
+            wallets,
+            selected: 0,
+        }
+    }
+
+    fn next(&mut self) {
+        if !self.wallets.is_empty() {
+            self.selected = (self.selected + 1) % self.wallets.len();
+        }
+    }
+
+    fn previous(&mut self) {
+        if !self.wallets.is_empty() {
+            self.selected = self
+                .selected
+                .checked_sub(1)
+                .unwrap_or(self.wallets.len() - 1);
+        }
+    }
+}
+
 /// Main application
 struct App {
     state: AppState,
     menu: MenuState,
     wallet: Option<Wallet>,
     message: Option<String>,
+
     env_selection: Option<EnvSelectionState>,
+    wallet_selection: Option<WalletListState>,
     start_node: bool, // True if should start node after TUI exits
 }
 
@@ -173,10 +209,11 @@ impl App {
 
         Self {
             state: AppState::Welcome,
-            menu: MenuState::new(menu_items),
+            menu: MenuState::new(menu_items.into_iter().map(String::from).collect()),
             wallet: None,
             message: None,
             env_selection: None,
+            wallet_selection: None,
             start_node: false,
         }
     }
@@ -223,6 +260,25 @@ impl App {
                 _ => {}
             },
             AppState::WalletLoaded { .. } => {
+                self.state = AppState::MainMenu;
+            }
+            AppState::SelectWallet => {
+                if let Some(ref mut selection) = self.wallet_selection {
+                    match key {
+                        KeyCode::Up | KeyCode::Char('k') => selection.previous(),
+                        KeyCode::Down | KeyCode::Char('j') => selection.next(),
+                        KeyCode::Enter => {
+                            self.select_wallet_confirm();
+                        }
+                        KeyCode::Esc => {
+                            self.state = AppState::MainMenu;
+                            self.wallet_selection = None;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            AppState::WalletSelected { .. } => {
                 self.state = AppState::MainMenu;
             }
             AppState::EnvironmentSelection { .. } => {
@@ -276,13 +332,16 @@ impl App {
     }
 
     fn handle_menu_selection(&mut self) {
-        let selected = self.menu.items[self.menu.selected];
-        match selected {
+        let selected = &self.menu.items[self.menu.selected];
+        match selected.as_str() {
             "Create Wallet" | "Create New Wallet" => {
                 self.state = AppState::CreateWallet;
             }
             "Load Wallet" => {
                 self.state = AppState::LoadWallet;
+            }
+            "Select Wallet" => {
+                self.prepare_wallet_selection();
             }
             "Check Verification Environment" => {
                 self.check_environment();
@@ -312,13 +371,23 @@ impl App {
         let seed_phrase = mnemonic.to_string();
         let keypair = hardclaw::keypair_from_mnemonic(&mnemonic, "");
 
-        // Create wallet from the keypair
-        let mut wallet = Wallet::from_keypair(keypair);
+        // Create wallet from the keypair and attach mnemonic
+        let mut wallet = Wallet::from_keypair_and_mnemonic(keypair, seed_phrase.clone());
         let address = wallet.address().to_string();
 
-        match wallet.save_as_default() {
+        // Save as <address>.json — only set as default if no default exists
+        let addr_path = Wallet::default_dir().join(format!("{}.json", address));
+        let save_result = wallet.save(&addr_path).and_then(|()| {
+            if !Wallet::default_exists() {
+                wallet.save_as_default()
+            } else {
+                Ok(())
+            }
+        });
+
+        match save_result {
             Ok(()) => {
-                let path = Wallet::default_path().display().to_string();
+                let path = addr_path.display().to_string();
                 self.wallet = Some(wallet);
                 self.message = None;
                 self.state = AppState::WalletCreated {
@@ -326,14 +395,15 @@ impl App {
                     path,
                     seed_phrase,
                 };
-                // Update menu to show "Load Wallet" as first option now
+                // Update menu to show "Load Wallet" and "Select Wallet"
                 self.menu = MenuState::new(vec![
-                    "Load Wallet",
-                    "Create New Wallet",
-                    "Check Verification Environment",
-                    "Run Verifier Node",
-                    "Help",
-                    "Quit",
+                    "Load Wallet".to_string(),
+                    "Select Wallet".to_string(),
+                    "Create New Wallet".to_string(),
+                    "Check Verification Environment".to_string(),
+                    "Run Verifier Node".to_string(),
+                    "Help".to_string(),
+                    "Quit".to_string(),
                 ]);
             }
             Err(e) => {
@@ -354,6 +424,50 @@ impl App {
             Err(e) => {
                 self.message = Some(format!("Failed to load wallet: {}", e));
                 self.state = AppState::MainMenu;
+            }
+        }
+    }
+
+    fn prepare_wallet_selection(&mut self) {
+        match Wallet::list_wallets() {
+            Ok(wallets) => {
+                if wallets.is_empty() {
+                    self.message = Some("No wallets found in ~/.hardclaw/wallets".to_string());
+                    self.state = AppState::MainMenu;
+                } else {
+                    self.wallet_selection = Some(WalletListState::new(wallets));
+                    self.state = AppState::SelectWallet;
+                }
+            }
+            Err(e) => {
+                self.message = Some(format!("Failed to list wallets: {}", e));
+                self.state = AppState::MainMenu;
+            }
+        }
+    }
+
+    fn select_wallet_confirm(&mut self) {
+        if let Some(selection) = &self.wallet_selection {
+            if let Some(info) = selection.wallets.get(selection.selected) {
+                // Load the selected wallet
+                match Wallet::load(&info.path) {
+                    Ok(mut wallet) => {
+                        // Save as default
+                        if let Err(e) = wallet.save_as_default() {
+                            self.message =
+                                Some(format!("Loaded wallet but failed to set default: {}", e));
+                        } else {
+                            self.message = None;
+                        }
+                        let address = wallet.address().to_string();
+                        self.wallet = Some(wallet);
+                        self.state = AppState::WalletSelected { address };
+                    }
+                    Err(e) => {
+                        self.message = Some(format!("Failed to load selected wallet: {}", e));
+                        self.state = AppState::MainMenu;
+                    }
+                }
             }
         }
     }
@@ -473,6 +587,10 @@ impl App {
             } => {
                 self.render_environment_checked(frame, chunks[1], runtime_checks, ai_check);
             }
+            AppState::SelectWallet => self.render_select_wallet(frame, chunks[1]),
+            AppState::WalletSelected { address } => {
+                self.render_wallet_loaded(frame, chunks[1], address); // Reuse loaded screen
+            }
 
             AppState::Help => self.render_help(frame, chunks[1]),
             AppState::NodeRunning => self.render_node_running(frame, chunks[1]),
@@ -508,21 +626,23 @@ impl App {
 
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
         let hint = match &self.state {
-            AppState::Welcome => "Press any key to continue | Ctrl+C/q: Quit",
-            AppState::MainMenu => "j/k: Navigate | Enter: Select | q/Ctrl+C: Quit",
-            AppState::CreateWallet | AppState::LoadWallet => {
-                "Enter/y: Confirm | Esc/n: Cancel | q/Ctrl+C: Quit"
-            }
-            AppState::WalletCreated { .. }
-            | AppState::WalletLoaded { .. }
-            | AppState::EnvironmentChecked { .. }
-            | AppState::Help => "Press any key to continue | q/Ctrl+C: Quit",
+            AppState::Welcome => "Press Enter to start",
+            AppState::MainMenu => "j/k: Navigate | Enter: Select | q: Quit",
+            AppState::CreateWallet => "Enter/y: Create | Esc/n: Cancel",
+            AppState::WalletCreated { .. } => "Press any key to continue",
+            AppState::LoadWallet => "Enter/y: Load Default | Esc/n: Cancel",
             AppState::EnvironmentSelection { .. } => {
                 "j/k: Navigate | Space: Toggle | Enter: Confirm | Esc/q: Cancel"
+            }
+            AppState::SelectWallet => "j/k: Navigate | Enter: Select | Esc: Cancel",
+            AppState::WalletSelected { .. } | AppState::WalletLoaded { .. } => {
+                "Press any key to continue"
             }
             AppState::EnvironmentSetup => "Setting up environment... | Ctrl+C: Force quit",
             AppState::NodeRunning => "Esc: Stop node | q/Ctrl+C: Quit",
             AppState::Quit => "",
+            AppState::EnvironmentChecked { .. } => "Press any key to return to menu",
+            AppState::Help => "Press any key to return to menu",
         };
 
         let mut footer_text = hint.to_string();
@@ -563,6 +683,51 @@ impl App {
             .block(Block::default());
 
         frame.render_widget(welcome, area);
+    }
+
+    fn render_select_wallet(&self, frame: &mut Frame, area: Rect) {
+        if let Some(selection) = &self.wallet_selection {
+            let items: Vec<ListItem> = selection
+                .wallets
+                .iter()
+                .enumerate()
+                .map(|(i, info)| {
+                    let style = if i == selection.selected {
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+
+                    let prefix = if i == selection.selected { "> " } else { "  " };
+                    let name = if info.name == "default" || info.name == "unknown" {
+                        // Try to use filename if name is generic
+                        info.path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or(&info.name)
+                            .to_string()
+                    } else {
+                        info.name.clone()
+                    };
+
+                    let content = format!("{}{:<20} ({})", prefix, name, info.address);
+                    ListItem::new(content).style(style)
+                })
+                .collect();
+
+            let list = List::new(items)
+                .block(
+                    Block::default()
+                        .title(" Select Wallet ")
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Cyan)),
+                )
+                .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+
+            frame.render_widget(list, centered_rect(80, 60, area));
+        }
     }
 
     fn render_main_menu(&self, frame: &mut Frame, area: Rect) {
